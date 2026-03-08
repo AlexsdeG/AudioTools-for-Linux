@@ -20,15 +20,21 @@ public class AudioTools
         window.SetPosition(WindowPosition.Center);
         window.DeleteEvent += (o, args) => Application.Quit();
 
-        // Create a vertical box to hold the buttons and text view
+        // Create a vertical box to hold all sections
         var vbox = new VBox();
+
+        // Keep the controls area visually grouped with padding.
+        var topControlsBox = new VBox(false, 5)
+        {
+            BorderWidth = 10
+        };
 
 
         // Create an HBox to hold the two buttons side by side
         var hbox = new HBox();
 
-		var menuBar = new MenuBar();
-		vbox.PackStart(menuBar, false, false, 0);
+        var menuBar = new MenuBar();
+        vbox.PackStart(menuBar, false, false, 0);
 		
 		var optionsMenuItem = new MenuItem("Options");
         menuBar.Add(optionsMenuItem);
@@ -94,7 +100,7 @@ public class AudioTools
         sampleComboBox.AppendText("48000");
         hbox.PackStart(sampleComboBox, false, false, 5);
 
-        vbox.PackStart(hbox, false, true, 5);
+        topControlsBox.PackStart(hbox, false, true, 5);
 
         // Create a button
         var sampleButton = new Button("Set Sample Rate");
@@ -123,7 +129,7 @@ public class AudioTools
         bufferComboBox.AppendText("1024");
         hbox.PackStart(bufferComboBox, false, false, 5);
 
-        vbox.PackStart(hbox, false, true, 5);
+        topControlsBox.PackStart(hbox, false, true, 5);
 
         // Create a button
         var bufferButton = new Button("Set Buffer Size");
@@ -137,15 +143,30 @@ public class AudioTools
 
 
 	hbox = new HBox();
-        // Create Manage Paths button
+    var managePathsLabel = new Label("Plugin Paths:");
+    hbox.PackStart(managePathsLabel, false, false, 5);
+
+    // Create Manage Paths button
         var managePathsButton = new Button("Manage Paths");
         managePathsButton.Clicked += (sender, e) => ShowPathManagerWindow();
-        vbox.PackStart(managePathsButton, false, false, 5);
+    hbox.PackStart(managePathsButton, false, false, 5);
+    topControlsBox.PackStart(hbox, false, false, 5);
 
-        // Create View Plugins button
+    hbox = new HBox();
+    var viewPluginsLabel = new Label("Plugin Browser:");
+    hbox.PackStart(viewPluginsLabel, false, false, 5);
+
+    // Create View Plugins button
         var viewPluginsButton = new Button("View Plugins");
         viewPluginsButton.Clicked += (sender, e) => ShowPluginBrowserWindow();
-        vbox.PackStart(viewPluginsButton, false, false, 5);
+    hbox.PackStart(viewPluginsButton, false, false, 5);
+    topControlsBox.PackStart(hbox, false, false, 5);
+
+        // Add spacing before the Yabridge controls section.
+        hbox = new HBox();
+        topControlsBox.PackStart(hbox, false, false, 2);
+
+        hbox = new HBox();
 
         // Create a label
         var yabridgeLabel = new Label("Yabridge:");
@@ -161,7 +182,7 @@ public class AudioTools
         yabridgeComboBox.AppendText("help");
         hbox.PackStart(yabridgeComboBox, false, false, 5);
 
-        vbox.PackStart(hbox, false, true, 5);
+        topControlsBox.PackStart(hbox, false, true, 5);
 
         // Create a button
         var yabridgeButton = new Button("Run");
@@ -225,7 +246,7 @@ public class AudioTools
 
 
         // Create the Clear button
-        var clearButton = CreateButton("Clear", 320, 50);
+        var clearButton = CreateButton("Clear", 140, 36);
         clearButton.Clicked += (sender, e) => ClearOutput();
 
         // Create the text view for output
@@ -239,10 +260,17 @@ public class AudioTools
         var scrolledWindow = new ScrolledWindow();
         scrolledWindow.Add(outputTextView);
 
-        // Add the horizontal box and the scrolled window to the vertical box
-        vbox.PackStart(hbox, false, false, 5);
-        vbox.PackStart(scrolledWindow, true, true, 5);
-        vbox.PackStart(clearButton, false, false, 5);
+        // Add margins around output text area and clear button.
+        var outputSectionBox = new VBox(false, 5)
+        {
+            BorderWidth = 10
+        };
+
+        // Add the controls section and output area.
+        vbox.PackStart(topControlsBox, false, false, 0);
+        outputSectionBox.PackStart(scrolledWindow, true, true, 0);
+        outputSectionBox.PackStart(clearButton, false, false, 0);
+        vbox.PackStart(outputSectionBox, true, true, 0);
 
         // Create the EventBox container which will handle clicks
         EventBox eventBox = new EventBox();
