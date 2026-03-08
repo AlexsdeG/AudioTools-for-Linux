@@ -2,6 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 using Gtk;
 
 public class AudioTools
@@ -403,10 +406,10 @@ public class AudioTools
         }
     }
 
-    public static string RunCommandWithReturn(string command)
+    public static async Task<string> RunCommandWithReturnAsync(string command, CancellationToken ct = default)
     {
-    	List<string> output = new List<string>();
-        // Set up the process start info
+        var output = new List<string>();
+
         var processStartInfo = new ProcessStartInfo
         {
             FileName = "/bin/bash",
@@ -417,14 +420,69 @@ public class AudioTools
             CreateNoWindow = true
         };
 
-        // Start the process
-        using (var process = new Process { StartInfo = processStartInfo })
+        using (var process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true })
+        {
+            var outputTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            process.OutputDataReceived += (sender, args) =>
+            {
+                if (args.Data == null)
+                {
+                    return;
+                }
+                output.Add(args.Data);
+            };
+
+            process.ErrorDataReceived += (sender, args) =>
+            {
+                if (args.Data == null)
+                {
+                    return;
+                }
+                output.Add("Error: " + args.Data);
+            };
+
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            using (ct.Register(() =>
+            {
+                try { if (!process.HasExited) process.Kill(true); } catch { }
+            }))
+            {
+                await process.WaitForExitAsync(ct);
+            }
+        }
+
+        return string.Join("\n", output);
+    }
+
+    // Compatibility synchronous wrapper (keeps existing callsites working during refactor)
+    public static string RunCommandWithReturn(string command)
+    {
+        return RunCommandWithReturnAsync(command).GetAwaiter().GetResult();
+    }
+
+    public static async Task RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
+    {
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = "/bin/bash",
+            Arguments = $"-c \"{command}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using (var process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true })
         {
             process.OutputDataReceived += (sender, args) =>
             {
                 if (!string.IsNullOrEmpty(args.Data))
                 {
-                    output.Add(args.Data);
+                    progress?.Report(args.Data);
                 }
             };
 
@@ -432,18 +490,22 @@ public class AudioTools
             {
                 if (!string.IsNullOrEmpty(args.Data))
                 {
-                    output.Add("Error: " + args.Data);
-
+                    progress?.Report("Error: " + args.Data);
                 }
             };
 
             process.Start();
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            process.WaitForExit();
+
+            using (ct.Register(() =>
+            {
+                try { if (!process.HasExited) process.Kill(true); } catch { }
+            }))
+            {
+                await process.WaitForExitAsync(ct);
+            }
         }
-		
-        return string.Join("\n",output);
     }
 
     private void ClearOutput()
@@ -584,13 +646,25 @@ public class AudioTools
             vbox.PackStart(scrolledWindow, true, true, 5);
 
             var refreshButton = new Button("Refresh");
-            refreshButton.Clicked += (sender, e) => RefreshPluginList(pluginStore);
+            refreshButton.Clicked += async (sender, e) =>
+            {
+                refreshButton.Sensitive = false;
+                var cts = new CancellationTokenSource();
+                try
+                {
+                    await RefreshPluginList(pluginStore, cts.Token);
+                }
+                finally
+                {
+                    refreshButton.Sensitive = true;
+                }
+            };
             vbox.PackStart(refreshButton, false, false, 5);
 
             pluginWindow.Add(vbox);
             
             // 4. Load plugins immediately before showing the window (removes the 'Shown' event trap)
-            RefreshPluginList(pluginStore);
+            _ = RefreshPluginList(pluginStore);
             
             pluginWindow.ShowAll();
         }
@@ -690,28 +764,36 @@ public class AudioTools
         }
     }
 
-    private void RefreshPluginList(ListStore pluginStore)
+    private async Task RefreshPluginList(ListStore pluginStore, CancellationToken ct = default)
     {
         pluginStore.Clear();
         try
         {
-            var statusOutput = RunCommandWithReturn("$HOME/.local/share/yabridge/yabridgectl status");
+            var statusOutput = await RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl status", ct);
             var plugins = ParsePluginStatus(statusOutput);
 
             if (plugins.Count == 0)
             {
-                pluginStore.AppendValues("No plugins found", "-", "-", "-");
+                Application.Invoke(delegate { pluginStore.AppendValues("No plugins found", "-", "-", "-"); });
                 return;
             }
 
             foreach (var plugin in plugins)
             {
-                pluginStore.AppendValues(plugin.Name, plugin.Type, plugin.Location, "Open Folder");
+                if (ct.IsCancellationRequested) break;
+                var name = plugin.Name;
+                var type = plugin.Type;
+                var location = plugin.Location;
+                Application.Invoke(delegate { pluginStore.AppendValues(name, type, location, "Open Folder"); });
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore cancellation
         }
         catch (Exception ex)
         {
-            pluginStore.AppendValues("Error loading plugins", "-", ex.Message, "-");
+            Application.Invoke(delegate { pluginStore.AppendValues("Error loading plugins", "-", ex.Message, "-"); });
         }
     }
 

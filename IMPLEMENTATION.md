@@ -55,7 +55,7 @@ Goals
 		 - Show a MessageDialog containing actionable stderr and a suggestion (e.g., "install xdg-open or ensure PATH includes it").
 	 - Why: Published binaries often miss session env vars; this fallback mosaic increases reliability.
 
-2) [ ] Async process helpers + streaming (Medium)
+2) [x] Async process helpers + streaming (Medium)
 	 - Files: Replace `RunCommand` / `RunCommandWithReturn` in `Audio Tools.cs` with:
 		 - `Task RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct)`
 		 - `Task<string> RunCommandWithReturnAsync(string command, CancellationToken ct)`
