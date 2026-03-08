@@ -2,22 +2,21 @@
 
 ## 1. Project Context & Architecture
 
-* **Goal:** Add a path management GUI to AudioTools for Linux, allowing users to visually add, remove, and list plugin directories managed by `yabridgectl`.
-* **Tech Stack & Dependencies:** - **Language:** C# (.NET 8.0)
-* **UI Framework:** GtkSharp (GTK 3)
-* **Tooling:** `yabridgectl` CLI
+* **Goal:** Create a "Plugin Browser" window that lists all synced plugins found by `yabridge`, displaying their name, type (VST2/VST3/CLAP), and directory location, with the ability to open their containing folder in the file explorer.
+* **Tech Stack & Dependencies:**
+* **Language:** C# (.NET 8.0).
+* **UI Framework:** GtkSharp (GTK 3).
+* **External CLI:** `yabridgectl` for data retrieval.
+* **System Tool:** `xdg-open` for opening file explorer windows.
 
 
 * **File Structure:**
-```text
-├── Audio Tools.cs         # Modify to add trigger button and window logic
-├── AudioTools.csproj      # Existing project configuration
-
-```
+* `Audio Tools.cs`: Primary file for adding the trigger button, the new window class, and parsing logic.
 
 
-* **Attention Points:** - Commands must be executed via `/bin/bash` to ensure shell expansions (like `$HOME`) work correctly.
-* Use `Gtk.TreeView` with a `ListStore` for the path list to provide a standard desktop list experience.
+* **Attention Points:**
+* `yabridgectl status` output is tabular text; parsing must account for variable spacing.
+* File paths in Linux should be handled carefully to avoid shell escaping issues when passed to `xdg-open`.
 
 
 
@@ -25,41 +24,38 @@
 
 ## 2. Execution Phases
 
-#### Phase 1: Main Window Integration
+#### Phase 1: Main Window Update
 
-* [x] **Step 1.1:** In `Audio Tools.cs`, locate the `VBox` setup and add a new `Button` labeled "Manage Paths".
-* [x] **Step 1.2:** Attach a `Clicked` event handler to the "Manage Paths" button that initializes and shows the `PathManagerWindow`.
-* [x] **Step 1.3:** Position the button within the `vbox` layout, ideally near the existing Yabridge controls.
-* [x] **Verification:** Run the app and ensure the "Manage Paths" button appears and can be clicked without errors.
+* [x] **Step 1.1:** In `Audio Tools.cs`, add a new `Button` titled "View Plugins" to the main `vbox`.
+* [x] **Step 1.2:** Implement a click handler that instantiates and shows the `PluginBrowserWindow`.
+* [ ] **Verification:** Launch AudioTools and confirm the "View Plugins" button exists and opens a new window.
 
-#### Phase 2: Path Management Window Scaffolding
+#### Phase 2: Plugin Browser Window & UI Layout
 
-* [x] **Step 2.1:** Create a method or helper class `PathManagerWindow` that inherits from `Gtk.Window`.
-* [x] **Step 2.2:** Set window properties: Title ("Manage Plugin Paths"), Default Size (500x300), and Type (Toplevel).
-* [x] **Step 2.3:** Implement a `VBox` container to hold the path list and a separate `HBox` for action buttons (Add/Remove/Close).
-* [x] **Verification:** Click the "Manage Paths" button in the main app and verify a new empty window opens.
+* [x] **Step 2.1:** Create the `PluginBrowserWindow` class inheriting from `Gtk.Window`.
+* [x] **Step 2.2:** Add a `TreeView` inside a `ScrolledWindow` to handle many plugins.
+* [x] **Step 2.3:** Define four columns in the `TreeView`: **Name**, **Type**, **Location**, and an **Action** (Open Folder).
+* [x] **Step 2.4:** Add a "Refresh" button to re-run the scan command.
+* [ ] **Verification:** Open the window and verify the headers for Name, Type, and Location are visible.
 
-#### Phase 3: List Implementation & Data Retrieval
+#### Phase 3: Data Retrieval & Parsing
 
-* [x] **Step 3.1:** Define a `Gtk.TreeView` and a `Gtk.ListStore` with a single string column for paths.
-* [x] **Step 3.2:** Implement a `RefreshPathList()` function that runs `yabridgectl list` using the existing `RunCommandWithReturn` method.
-* [x] **Step 3.3:** Add logic to parse the output of `yabridgectl list` (filtering out header/footer text) and populate the `ListStore`.
-* [x] **Step 3.4:** Add the `TreeView` into a `ScrolledWindow` within the popup's `VBox`.
-* [x] **Verification:** Open the Manage Paths window; verify it correctly lists your currently configured `yabridge` directories.
+* [x] **Step 3.1:** Execute `$HOME/.local/share/yabridge/yabridgectl status` using the existing `RunCommandWithReturn` helper.
+* [x] **Step 3.2:** Implement a parser to loop through the string lines. Use `StringSplitOptions.RemoveEmptyEntries` to extract columns from the `yabridgectl` table output.
+* [x] **Step 3.3:** Map the parsed data into a `Gtk.ListStore` (string, string, string).
+* [ ] **Verification:** Verify the console output of the parser shows correctly identified plugin names and paths.
 
-#### Phase 4: Add & Remove Logic
+#### Phase 4: File Explorer Integration
 
-* [x] **Step 4.1:** Implement the "Add" button: Use `Gtk.FileChooserDialog` (Action: SelectFolder) to let the user pick a directory.
-* [x] **Step 4.2:** On folder selection, execute `$HOME/.local/share/yabridge/yabridgectl add [selected_path]` via the existing command runner.
-* [x] **Step 4.3:** Implement the "Remove" button: Get the selected path from the `TreeView` selection and execute `yabridgectl rm [selected_path]`.
-* [x] **Step 4.4:** Ensure `RefreshPathList()` is called automatically after any Add or Remove operation to update the UI.
-* [x] **Verification:** Add a new test folder and verify it appears in the list; then remove it and verify it disappears.
+* [x] **Step 4.1:** Attach a `RowActivated` event (double-click) or a specific "Open Folder" button for each row.
+* [x] **Step 4.2:** Use `Process.Start("xdg-open", directoryPath)` to trigger the system's default file manager at the plugin's location.
+* [x] **Step 4.3:** Ensure the path is wrapped in quotes or properly escaped for the shell command.
+* [ ] **Verification:** Click a plugin in the list and confirm your Linux file manager (Nautilus, Dolphin, etc.) opens the correct folder.
 
 ---
 
 ## 3. Global Testing Strategy
 
-* **Permissions:** Ensure the app handles cases where the user selects a folder they don't have read/write access to.
-* **Path Spaces:** Test adding and removing paths that contain spaces (e.g., `Documents/My VSTs`) to ensure shell commands are properly quoted.
-* **Empty State:** Verify the window behaves correctly if `yabridgectl list` returns no paths.
-* **Duplicate Prevention:** Observe how `yabridgectl` handles adding a path that already exists and ensure the UI reflects the result gracefully.
+* **Large Libraries:** Test the window's performance and scrolling with 100+ plugins.
+* **Path Variants:** Ensure plugins located in hidden folders (e.g., `.wine/drive_c/...`) open correctly in the file explorer.
+* **Empty State:** If `yabridgectl` hasn't synced anything yet, display a "No plugins found" message or an empty list gracefully.

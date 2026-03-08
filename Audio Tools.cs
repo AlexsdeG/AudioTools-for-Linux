@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using Gtk;
 
@@ -13,7 +14,7 @@ public class AudioTools
 	
         
         // Create the main window
-        var appVersion = "0.95";
+        var appVersion = "0.96";
         var window = new Window("AudioTools v" + appVersion);
         window.SetDefaultSize(400, 500);
         window.SetPosition(WindowPosition.Center);
@@ -140,6 +141,11 @@ public class AudioTools
         var managePathsButton = new Button("Manage Paths");
         managePathsButton.Clicked += (sender, e) => ShowPathManagerWindow();
         vbox.PackStart(managePathsButton, false, false, 5);
+
+        // Create View Plugins button
+        var viewPluginsButton = new Button("View Plugins");
+        viewPluginsButton.Clicked += (sender, e) => ShowPluginBrowserWindow();
+        vbox.PackStart(viewPluginsButton, false, false, 5);
 
         // Create a label
         var yabridgeLabel = new Label("Yabridge:");
@@ -369,10 +375,9 @@ public class AudioTools
         }
     }
 
-    private String RunCommandWithReturn(string command)
+    public static string RunCommandWithReturn(string command)
     {
     	List<string> output = new List<string>();
-        var returnValue = "";
         // Set up the process start info
         var processStartInfo = new ProcessStartInfo
         {
@@ -499,6 +504,181 @@ public class AudioTools
         RefreshPathList(listStore);
         
         pathWindow.ShowAll();
+    }
+
+    private void ShowPluginBrowserWindow()
+    {
+        try
+        {
+            // 1. Create window inline, exactly like PathManager
+            var pluginWindow = new Window("Plugin Browser");
+            pluginWindow.SetDefaultSize(900, 550);
+            pluginWindow.SetPosition(WindowPosition.Center);
+            pluginWindow.DeleteEvent += (o, args) => pluginWindow.Destroy();
+
+            var vbox = new VBox(false, 6);
+
+            // 2. Setup TreeView and Store
+            var pluginStore = new ListStore(typeof(string), typeof(string), typeof(string), typeof(string));
+            var treeView = new TreeView(pluginStore);
+            treeView.HeadersVisible = true;
+
+            string[] columns = { "Name", "Type", "Location", "Action" };
+            for (int i = 0; i < columns.Length; i++)
+            {
+                var col = new TreeViewColumn { Title = columns[i] };
+                var cell = new CellRendererText();
+                col.PackStart(cell, true);
+                col.AddAttribute(cell, "text", i);
+                treeView.AppendColumn(col);
+            }
+
+            // 3. Handle double-click / Row activation
+            treeView.RowActivated += (sender, args) => 
+            {
+                if (pluginStore.GetIter(out TreeIter iter, args.Path))
+                {
+                    var actionValue = pluginStore.GetValue(iter, 3)?.ToString();
+                    if (actionValue == "Open Folder")
+                    {
+                        var location = pluginStore.GetValue(iter, 2)?.ToString();
+                        if (!string.IsNullOrWhiteSpace(location) && location != "-")
+                        {
+                            OpenFolderLocation(pluginWindow, location);
+                        }
+                    }
+                }
+            };
+
+            var scrolledWindow = new ScrolledWindow();
+            scrolledWindow.SetPolicy(PolicyType.Automatic, PolicyType.Automatic);
+            scrolledWindow.Add(treeView);
+            vbox.PackStart(scrolledWindow, true, true, 5);
+
+            var refreshButton = new Button("Refresh");
+            refreshButton.Clicked += (sender, e) => RefreshPluginList(pluginStore);
+            vbox.PackStart(refreshButton, false, false, 5);
+
+            pluginWindow.Add(vbox);
+            
+            // 4. Load plugins immediately before showing the window (removes the 'Shown' event trap)
+            RefreshPluginList(pluginStore);
+            
+            pluginWindow.ShowAll();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error opening plugin browser: " + ex.Message);
+        }
+    }
+
+    private void OpenFolderLocation(Window parent, string location)
+    {
+        try
+        {
+            string[] candidates = { "/usr/bin/xdg-open", "/bin/xdg-open", "xdg-open" };
+
+            foreach (var candidate in candidates)
+            {
+                if (candidate.StartsWith("/") && !File.Exists(candidate))
+                {
+                    continue;
+                }
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = candidate,
+                    UseShellExecute = false
+                };
+                startInfo.ArgumentList.Add(location);
+
+                var process = Process.Start(startInfo);
+                if (process != null)
+                {
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException("Could not start xdg-open from known locations.");
+        }
+        catch (Exception ex)
+        {
+            using var dialog = new MessageDialog(
+                parent,
+                DialogFlags.Modal,
+                MessageType.Error,
+                ButtonsType.Ok,
+                $"Failed to open plugin folder.\n\nPath: {location}\n\n{ex.Message}\n\nTip: Ensure xdg-open is installed and available in this app's runtime PATH.");
+            dialog.Run();
+            dialog.Destroy();
+        }
+    }
+
+    private void RefreshPluginList(ListStore pluginStore)
+    {
+        pluginStore.Clear();
+        try
+        {
+            var statusOutput = RunCommandWithReturn("$HOME/.local/share/yabridge/yabridgectl status");
+            var plugins = ParsePluginStatus(statusOutput);
+
+            if (plugins.Count == 0)
+            {
+                pluginStore.AppendValues("No plugins found", "-", "-", "-");
+                return;
+            }
+
+            foreach (var plugin in plugins)
+            {
+                pluginStore.AppendValues(plugin.Name, plugin.Type, plugin.Location, "Open Folder");
+            }
+        }
+        catch (Exception ex)
+        {
+            pluginStore.AppendValues("Error loading plugins", "-", ex.Message, "-");
+        }
+    }
+
+    private List<(string Name, string Type, string Location)> ParsePluginStatus(string output)
+    {
+        var plugins = new List<(string Name, string Type, string Location)>();
+        var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        string currentDirectory = string.Empty;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd();
+            var trimmed = line.Trim();
+
+            if (string.IsNullOrWhiteSpace(trimmed)) continue;
+
+            if (trimmed.StartsWith("/") && !trimmed.Contains("::"))
+            {
+                currentDirectory = trimmed.TrimEnd('/');
+                continue;
+            }
+
+            if (!line.StartsWith("  ") || !trimmed.Contains("::")) continue;
+
+            var pluginParts = trimmed.Split(new[] { "::" }, 2, StringSplitOptions.RemoveEmptyEntries);
+            if (pluginParts.Length < 2) continue;
+
+            var relativePluginPath = pluginParts[0].Trim();
+            var metadataTokens = pluginParts[1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var pluginType = metadataTokens.Length > 0 ? metadataTokens[0].Trim() : "Unknown";
+
+            var relativeDirectory = System.IO.Path.GetDirectoryName(relativePluginPath);
+            var location = string.IsNullOrEmpty(relativeDirectory)
+                ? currentDirectory
+                : System.IO.Path.Combine(currentDirectory, relativeDirectory).Replace("\\", "/");
+
+            var pluginName = System.IO.Path.GetFileNameWithoutExtension(relativePluginPath);
+            if (string.IsNullOrEmpty(pluginName)) pluginName = relativePluginPath;
+
+            plugins.Add((pluginName, pluginType, location));
+        }
+
+        return plugins;
     }
 
     private void RefreshPathList(ListStore listStore)

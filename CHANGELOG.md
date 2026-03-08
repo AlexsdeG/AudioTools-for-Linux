@@ -2,6 +2,18 @@
 
 All notable changes to AudioTools for Linux will be documented in this file.
 
+## [0.96.0] - 2026-03-08
+
+### Added
+- **Plugin Browser window** with a new **View Plugins** button in the main UI.
+- **Scrollable plugin list** showing plugin **Name**, **Type**, **Location**, and an **Action** column.
+- **Refresh support** to reload plugin status directly from `yabridgectl status`.
+- **Folder opening workflow**: double-clicking a plugin row opens its folder using `xdg-open`.
+
+### Changed
+- Reused and exposed `RunCommandWithReturn` for plugin status retrieval in the plugin browser.
+- Added robust parsing logic for section-based `yabridgectl status` output with empty-state handling.
+
 ## [0.95.0] - 2026-03-08
 
 ### Added
