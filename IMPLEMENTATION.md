@@ -82,7 +82,7 @@ Goals
 		 - Support cancellation via `CancellationTokenSource` that kills process.
 	 - Why: Better UX for long sync operations and safe cancellation.
 
-5) [ ] Auto-resync and improved path management (Small → Medium)
+5) [x] Auto-resync and improved path management (Small → Medium)
 	 - Files: `AddPath`, `RemovePath`, `RefreshPathList` in `Audio Tools.cs`.
 	 - Tasks:
 		 - After adding/removing a path, prompt user: "Run yabridgectl sync now?" (checkbox to auto-run).

@@ -639,7 +639,7 @@ public class AudioTools
         pathWindow.Add(vbox);
         
         // Load initial paths
-        RefreshPathList(listStore);
+        _ = RefreshPathListAsync(listStore);
         
         pathWindow.ShowAll();
     }
@@ -887,13 +887,13 @@ public class AudioTools
         return plugins;
     }
 
-    private void RefreshPathList(ListStore listStore)
+    private async Task RefreshPathListAsync(ListStore listStore, CancellationToken ct = default)
     {
-        listStore.Clear();
-        
+        Application.Invoke(delegate { listStore.Clear(); });
+
         // Run yabridgectl list command
-        string output = RunCommandWithReturn("$HOME/.local/share/yabridge/yabridgectl list");
-        
+        string output = await RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl list", ct);
+
         // Parse output and add paths to list
         var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
@@ -902,7 +902,7 @@ public class AudioTools
             // Filter out header/footer text - only add lines that look like paths
             if (trimmedLine.StartsWith("/") || trimmedLine.StartsWith("~"))
             {
-                listStore.AppendValues(trimmedLine);
+                Application.Invoke(delegate { listStore.AppendValues(trimmedLine); });
             }
         }
     }
@@ -927,8 +927,39 @@ public class AudioTools
                 try
                 {
                     await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"", progress);
-                    // Refresh the list synchronously (uses compatibility wrapper)
-                    RefreshPathList(listStore);
+                    // Refresh the list
+                    await RefreshPathListAsync(listStore);
+                    // Ask user whether to run sync now
+                    var syncConfirm = new MessageDialog(null,
+                        DialogFlags.Modal,
+                        MessageType.Question,
+                        ButtonsType.YesNo,
+                        "Run yabridgectl sync now to update registry?");
+
+                    if (syncConfirm.Run() == (int)ResponseType.Yes)
+                    {
+                        syncConfirm.Destroy();
+                        var ctsSync = new CancellationTokenSource();
+                        var syncDlg = new ProgressDialog(null, "yabridgectl sync");
+                        syncDlg.OnCancel += () => { AppendOutput("Cancellation requested..."); try { ctsSync.Cancel(); } catch { } };
+                        try
+                        {
+                            var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
+                            await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            AppendOutput("Sync cancelled.");
+                        }
+                        finally
+                        {
+                            syncDlg.Close();
+                        }
+                    }
+                    else
+                    {
+                        syncConfirm.Destroy();
+                    }
                 }
                 finally
                 {
@@ -966,7 +997,38 @@ public class AudioTools
                 {
                     await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"", progress);
                     // Refresh the list
-                    RefreshPathList(listStore);
+                    await RefreshPathListAsync(listStore);
+                        // Ask user whether to run sync now
+                        var syncConfirm = new MessageDialog(null,
+                            DialogFlags.Modal,
+                            MessageType.Question,
+                            ButtonsType.YesNo,
+                            "Run yabridgectl sync now to update registry?");
+
+                        if (syncConfirm.Run() == (int)ResponseType.Yes)
+                        {
+                            syncConfirm.Destroy();
+                            var ctsSync = new CancellationTokenSource();
+                            var syncDlg = new ProgressDialog(null, "yabridgectl sync");
+                            syncDlg.OnCancel += () => { AppendOutput("Cancellation requested..."); try { ctsSync.Cancel(); } catch { } };
+                            try
+                            {
+                                var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
+                                await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                AppendOutput("Sync cancelled.");
+                            }
+                            finally
+                            {
+                                syncDlg.Close();
+                            }
+                        }
+                        else
+                        {
+                            syncConfirm.Destroy();
+                        }
                 }
                 finally
                 {
