@@ -10,52 +10,155 @@
 * **System Tool:** `xdg-open` for opening file explorer windows.
 
 
-* **File Structure:**
-* `Audio Tools.cs`: Primary file for adding the trigger button, the new window class, and parsing logic.
+# IMPLEMENTATION.md
 
+## Overview
+This document describes the design and prioritized workplan for improving AudioTools, with a focus on robust `yabridgectl` integration, responsive UI, and maintainable code structure.
 
-* **Attention Points:**
-* `yabridgectl status` output is tabular text; parsing must account for variable spacing.
-* File paths in Linux should be handled carefully to avoid shell escaping issues when passed to `xdg-open`.
+Goals
+- Make `yabridgectl` operations reliable and user-friendly.
+- Prevent UI freezes and double-click/duplicate-command issues.
+- Improve "open folder" reliability across run modes (Debug vs published single-file).
+- Split UI and execution logic to enable testing and easier maintenance.
+- Add logging and simple persistence for user settings.
 
+## Prioritized Roadmap
+- High (do first)
+	- Robust OpenFolder behavior and clear failure reporting.
+	- Convert blocking process calls to async with streamed output.
+	- Disable UI controls while long operations run (prevent double clicks).
+	- Surface stderr and non-zero exit codes to the UI.
+- Medium
+	- Progress / cancellable dialogs for long `yabridgectl` runs.
+	- Auto-sync after changing plugin paths (with opt-in confirmation).
+	- Split CLI logic into `YabridgeService` (separation of concerns).
+	- Basic logging to `~/.config/AudioTools/AudioTools.log`.
+- Low
+	- Settings persistence (JSON under `~/.config/AudioTools/`).
+	- Unit tests for `ParsePluginStatus()` and other parsers.
+	- UI polish (centered Clear button, search/filter in plugin browser, context menu).
 
+## Design Notes & Rationale
+- Published single-file apps can run with a different PATH and environment; launching external tools must explicitly check or adapt to environment differences (e.g., `DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`).
+- Long-running CLI calls must not run on GTK thread; use `Task.Run` + `Process.WaitForExitAsync()` and marshal UI updates using `Application.Invoke`.
+- For opening folders prefer `UseShellExecute = true` with `FileName = location` (let OS handle it). If not available, fall back to `xdg-open` and capture exit code + stderr.
+- Always disable the UI control that triggered an operation and show an animated spinner or change the label to a loading state, re-enable after completion or failure.
+
+## Implementation Plan (detailed, ordered)
+
+1) [x] Robust OpenFolderLocation (Small)
+	 - Files: `Audio Tools.cs` (method `OpenFolderLocation`).
+	 - Tasks:
+		 - Try `ProcessStartInfo.UseShellExecute = true` with `FileName = location` first and start it without arguments; on success return.
+		 - If that throws or returns null, try canonical `xdg-open` paths (`/usr/bin/xdg-open`, `/bin/xdg-open`, `xdg-open`).
+		 - Capture `ExitCode`, `StandardError` and wait for exit (use async).
+		 - Show a MessageDialog containing actionable stderr and a suggestion (e.g., "install xdg-open or ensure PATH includes it").
+	 - Why: Published binaries often miss session env vars; this fallback mosaic increases reliability.
+
+2) [ ] Async process helpers + streaming (Medium)
+	 - Files: Replace `RunCommand` / `RunCommandWithReturn` in `Audio Tools.cs` with:
+		 - `Task RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct)`
+		 - `Task<string> RunCommandWithReturnAsync(string command, CancellationToken ct)`
+	 - Implementation details:
+		 - Use `ProcessStartInfo` with Redirected streams, `UseShellExecute = false`.
+		 - Use `process.BeginOutputReadLine()` + event handlers; prefer `await process.WaitForExitAsync(ct)`.
+		 - Report output via `progress.Report(line)` and marshal updates to the UI using `Application.Invoke`.
+	 - Why: Prevents UI freezes and supports streaming live output into the TextView.
+
+3) [ ] Disable controls / loading state pattern (Small)
+	 - Files: `Audio Tools.cs` — all button click handlers that run long operations (`yabridgectl sync`, `list`, `status`, `AddPath`, `RemovePath`, plugin refresh).
+	 - Tasks:
+		 - On click, set `button.Sensitive = false` (or set a `Loading` label/icon).
+		 - Optionally add a small `Spinner` or change the button label to `Working...`.
+		 - Re-enable button at operation completion or on exception in `finally`.
+		 - Prevent nested clicks via a simple per-action `bool` guard or by disabling the full `topControlsBox` while operations run.
+	 - Why: Avoids duplicate operations and confusing state.
+
+4) [ ] Progress / cancellable dialog for long `yabridgectl` runs (Medium)
+	 - Files: New small helper class `ProgressDialog` (GTK dialog with spinner, text area, Cancel button).
+	 - Tasks:
+		 - Show dialog when running `sync` or `sync -v`.
+		 - Pipe process output to dialog log and to main output area.
+		 - Support cancellation via `CancellationTokenSource` that kills process.
+	 - Why: Better UX for long sync operations and safe cancellation.
+
+5) [ ] Auto-resync and improved path management (Small → Medium)
+	 - Files: `AddPath`, `RemovePath`, `RefreshPathList` in `Audio Tools.cs`.
+	 - Tasks:
+		 - After adding/removing a path, prompt user: "Run yabridgectl sync now?" (checkbox to auto-run).
+		 - If yes, run `yabridgectl sync` asynchronously, show progress dialog.
+	 - Why: Keeps yabridge registry consistent without manual steps.
+
+6) [ ] Split logic into `YabridgeService` (Medium)
+	 - Files: New file `YabridgeService.cs`; refactor `RunCommand*` usage to the service.
+	 - Responsibilities:
+		 - Provide `Task<string> GetStatusAsync()`, `Task<List<(Name,Type,Location)>> GetPluginsAsync()`, `Task<List<string>> GetPathsAsync()`, `Task SyncAsync(...)`.
+		 - Centralized logging and environment checks.
+	 - Why: Easier testing, reuse, and clearer UI code.
+
+7) [ ] Parser hardening & unit tests (Small → Medium)
+	 - Files: Extract `ParsePluginStatus` into `PluginParser.cs`.
+	 - Tasks:
+		 - Add unit tests (new test project) for multiple `yabridgectl status` sample outputs (edge cases, different formats).
+		 - Normalize paths and handle empty/unknown entries.
+	 - Why: Prevent regressions and increase robustness.
+
+8) [ ] Settings & logging (Small)
+	 - Files: New `Settings.cs`, `Logger.cs`; create `~/.config/AudioTools/` directory.
+	 - Tasks:
+		 - Save last window position, last yabridge action, list of user-added plugin paths (optional).
+		 - Log commands, environment vars, and stderr to `AudioTools.log`.
+	 - Why: Easier diagnosis for support and persist useful preferences.
+
+9) [ ] UI polish & deprecated-ctor replacement (Small)
+	 - Files: `Audio Tools.cs`.
+	 - Tasks:
+		 - Replace obsolete `new VBox()`/`new HBox()` constructors with `new Box(Orientation.Vertical, spacing)` where practical to remove deprecation warnings.
+		 - Center Clear button using an `HBox` with `Center` alignment.
+		 - Add search/filter bar in plugin browser (optional).
+	 - Why: Cleaner code and fewer warnings.
+
+## Implementation Details & Code Pointers
+- `OpenFolderLocation`: see current implementation in `Audio Tools.cs` (search for `OpenFolderLocation`) — replace with the robust fallback + diagnostics behavior.
+- `RunCommand` / `RunCommandWithReturn`: appear in `Audio Tools.cs` — convert to async helpers; use `Task.Run` + `process.WaitForExitAsync`.
+- UI handlers to update: the yabridge buttons and `Manage Paths`/`View Plugins` flows in `Audio Tools.cs`.
+- Parser to extract: `ParsePluginStatus(string output)` in `Audio Tools.cs` — extract and add tests.
+
+## Example: Button disabled pattern (pseudo)
+- On click:
+	- `button.Sensitive = false;`
+	- `try { await YabridgeService.SyncAsync(progress, ct); } finally { button.Sensitive = true; }`
+
+## Testing & Validation
+- Manual:
+	- Run published binary from a terminal; validate `OpenFolderLocation` works when launched from a desktop `.desktop` file and when launched from terminal.
+	- Run `yabridgectl sync` with many plugins to test streaming/progress UI.
+- Automated:
+	- Unit tests for plugin parsing (various outputs).
+	- Integration tests that mock `YabridgeService` (if feasible).
+
+## Backwards Compatibility & Safety
+- All changes are additive; default behavior remains unless toggles are introduced.
+- Long-running commands should be cancellable and should not change application state until operation completes.
+
+## Suggested timeline & effort estimate
+- Day 1 (1–3 hours): Implement robust `OpenFolderLocation` + small tests.
+- Day 2 (4–8 hours): Implement async process helpers and convert `RefreshPluginList` and `RefreshPathList` to async + disable buttons while running.
+- Day 3 (4–8 hours): Add progress dialog and cancellation for `sync`.
+- Day 4 (4–8 hours): Refactor `YabridgeService`, extract parser, and add unit tests.
+- Follow-up (2–6 hours): Settings, logging, and UI polish.
+
+## Acceptance criteria
+- Published binary opens folder reliably on typical Ubuntu desktop.
+- Long `yabridgectl` commands run without blocking the UI and show live output.
+- Buttons are disabled during operations and re-enabled on completion or failure.
+- Parser passes unit tests for representative `yabridgectl` output variations.
 
 ---
 
-## 2. Execution Phases
+Quick next steps I can implement for you now (pick one):
+- A. Add the robust `OpenFolderLocation()` implementation + user-facing error dialog.
+- B. Convert `RunCommandWithReturn()` to `RunCommandWithReturnAsync()` and convert `RefreshPluginList()` to use it (includes button disable pattern).
+- C. Implement progress dialog + cancellation for `yabridgectl sync`.
 
-#### Phase 1: Main Window Update
-
-* [x] **Step 1.1:** In `Audio Tools.cs`, add a new `Button` titled "View Plugins" to the main `vbox`.
-* [x] **Step 1.2:** Implement a click handler that instantiates and shows the `PluginBrowserWindow`.
-* [ ] **Verification:** Launch AudioTools and confirm the "View Plugins" button exists and opens a new window.
-
-#### Phase 2: Plugin Browser Window & UI Layout
-
-* [x] **Step 2.1:** Create the `PluginBrowserWindow` class inheriting from `Gtk.Window`.
-* [x] **Step 2.2:** Add a `TreeView` inside a `ScrolledWindow` to handle many plugins.
-* [x] **Step 2.3:** Define four columns in the `TreeView`: **Name**, **Type**, **Location**, and an **Action** (Open Folder).
-* [x] **Step 2.4:** Add a "Refresh" button to re-run the scan command.
-* [ ] **Verification:** Open the window and verify the headers for Name, Type, and Location are visible.
-
-#### Phase 3: Data Retrieval & Parsing
-
-* [x] **Step 3.1:** Execute `$HOME/.local/share/yabridge/yabridgectl status` using the existing `RunCommandWithReturn` helper.
-* [x] **Step 3.2:** Implement a parser to loop through the string lines. Use `StringSplitOptions.RemoveEmptyEntries` to extract columns from the `yabridgectl` table output.
-* [x] **Step 3.3:** Map the parsed data into a `Gtk.ListStore` (string, string, string).
-* [ ] **Verification:** Verify the console output of the parser shows correctly identified plugin names and paths.
-
-#### Phase 4: File Explorer Integration
-
-* [x] **Step 4.1:** Attach a `RowActivated` event (double-click) or a specific "Open Folder" button for each row.
-* [x] **Step 4.2:** Use `Process.Start("xdg-open", directoryPath)` to trigger the system's default file manager at the plugin's location.
-* [x] **Step 4.3:** Ensure the path is wrapped in quotes or properly escaped for the shell command.
-* [ ] **Verification:** Click a plugin in the list and confirm your Linux file manager (Nautilus, Dolphin, etc.) opens the correct folder.
-
----
-
-## 3. Global Testing Strategy
-
-* **Large Libraries:** Test the window's performance and scrolling with 100+ plugins.
-* **Path Variants:** Ensure plugins located in hidden folders (e.g., `.wine/drive_c/...`) open correctly in the file explorer.
-* **Empty State:** If `yabridgectl` hasn't synced anything yet, display a "No plugins found" message or an empty list gracefully.
+Tell me which to implement first and I’ll produce the exact code changes and run a build locally.

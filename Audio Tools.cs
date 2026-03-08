@@ -602,9 +602,31 @@ public class AudioTools
 
     private void OpenFolderLocation(Window parent, string location)
     {
+        // Try letting the OS open the folder first (works for desktop environments and published single-file apps)
         try
         {
+            var shellStart = new ProcessStartInfo
+            {
+                FileName = location,
+                UseShellExecute = true
+            };
+
+            try
+            {
+                var started = Process.Start(shellStart);
+                if (started != null)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                // Continue to fallbacks below
+            }
+
+            // Fallback to xdg-open variants and capture stderr for diagnostics
             string[] candidates = { "/usr/bin/xdg-open", "/bin/xdg-open", "xdg-open" };
+            var errors = new System.Collections.Generic.List<string>();
 
             foreach (var candidate in candidates)
             {
@@ -616,18 +638,44 @@ public class AudioTools
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = candidate,
-                    UseShellExecute = false
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
                 };
+
                 startInfo.ArgumentList.Add(location);
 
-                var process = Process.Start(startInfo);
-                if (process != null)
+                try
                 {
-                    return;
+                    using var proc = Process.Start(startInfo);
+                    if (proc == null)
+                    {
+                        errors.Add($"{candidate}: failed to start process.");
+                        continue;
+                    }
+
+                    var stdErr = proc.StandardError.ReadToEnd();
+                    var stdOut = proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit();
+
+                    if (proc.ExitCode == 0)
+                    {
+                        return;
+                    }
+
+                    var combined = stdErr;
+                    if (string.IsNullOrWhiteSpace(combined)) combined = stdOut;
+                    if (string.IsNullOrWhiteSpace(combined)) combined = $"{candidate} exited with code {proc.ExitCode}";
+                    errors.Add(combined.Trim());
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{candidate}: {ex.Message}");
                 }
             }
 
-            throw new InvalidOperationException("Could not start xdg-open from known locations.");
+            throw new InvalidOperationException(string.Join("\n", errors));
         }
         catch (Exception ex)
         {
