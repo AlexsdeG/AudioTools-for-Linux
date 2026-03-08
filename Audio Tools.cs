@@ -13,7 +13,7 @@ public class AudioTools
 	
         
         // Create the main window
-        var appVersion = "0.94";
+        var appVersion = "0.95";
         var window = new Window("AudioTools v" + appVersion);
         window.SetDefaultSize(400, 500);
         window.SetPosition(WindowPosition.Center);
@@ -136,6 +136,10 @@ public class AudioTools
 
 
 	hbox = new HBox();
+        // Create Manage Paths button
+        var managePathsButton = new Button("Manage Paths");
+        managePathsButton.Clicked += (sender, e) => ShowPathManagerWindow();
+        vbox.PackStart(managePathsButton, false, false, 5);
 
         // Create a label
         var yabridgeLabel = new Label("Yabridge:");
@@ -192,7 +196,6 @@ public class AudioTools
             RunCommand(outCommand);
         };
         hbox.PackStart(yabridgeButton, false, false, 5);
-
 
 /*
         hbox = new HBox();
@@ -438,6 +441,150 @@ public class AudioTools
     {
         // Check for common path patterns (you can customize this)
         return line.StartsWith("/") || line.Contains("\\") || line.Contains(":");
+    }
+
+    private void ShowPathManagerWindow()
+    {
+        // Create the Path Manager window
+        var pathWindow = new Window("Manage Plugin Paths");
+        pathWindow.SetDefaultSize(500, 300);
+        pathWindow.SetPosition(WindowPosition.Center);
+        pathWindow.DeleteEvent += (o, args) => pathWindow.Destroy();
+
+        // Create main vertical box
+        var vbox = new VBox(false, 5);
+
+        // Create TreeView and ListStore for paths
+        var listStore = new ListStore(typeof(string));
+        var treeView = new TreeView(listStore);
+        treeView.HeadersVisible = true;
+        
+        var column = new TreeViewColumn();
+        column.Title = "Plugin Paths";
+        var cell = new CellRendererText();
+        column.PackStart(cell, true);
+        column.AddAttribute(cell, "text", 0);
+        treeView.AppendColumn(column);
+
+        // Add TreeView to ScrolledWindow
+        var scrolledWindow = new ScrolledWindow();
+        scrolledWindow.SetPolicy(PolicyType.Automatic, PolicyType.Automatic);
+        scrolledWindow.Add(treeView);
+        vbox.PackStart(scrolledWindow, true, true, 5);
+
+        // Create HBox for buttons
+        var buttonBox = new HBox(false, 5);
+
+        // Add button
+        var addButton = new Button("Add");
+        addButton.Clicked += (sender, e) => AddPath(listStore);
+        buttonBox.PackStart(addButton, true, true, 5);
+
+        // Remove button
+        var removeButton = new Button("Remove");
+        removeButton.Clicked += (sender, e) => RemovePath(treeView, listStore);
+        buttonBox.PackStart(removeButton, true, true, 5);
+
+        // Close button
+        var closeButton = new Button("Close");
+        closeButton.Clicked += (sender, e) => pathWindow.Destroy();
+        buttonBox.PackStart(closeButton, true, true, 5);
+
+        vbox.PackStart(buttonBox, false, false, 5);
+
+        // Add vbox to window
+        pathWindow.Add(vbox);
+        
+        // Load initial paths
+        RefreshPathList(listStore);
+        
+        pathWindow.ShowAll();
+    }
+
+    private void RefreshPathList(ListStore listStore)
+    {
+        listStore.Clear();
+        
+        // Run yabridgectl list command
+        string output = RunCommandWithReturn("$HOME/.local/share/yabridge/yabridgectl list");
+        
+        // Parse output and add paths to list
+        var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            string trimmedLine = line.Trim();
+            // Filter out header/footer text - only add lines that look like paths
+            if (trimmedLine.StartsWith("/") || trimmedLine.StartsWith("~"))
+            {
+                listStore.AppendValues(trimmedLine);
+            }
+        }
+    }
+
+    private void AddPath(ListStore listStore)
+    {
+        var fileChooser = new FileChooserDialog(
+            "Select Plugin Directory",
+            null,
+            FileChooserAction.SelectFolder,
+            "Cancel", ResponseType.Cancel,
+            "Select", ResponseType.Accept);
+
+        if (fileChooser.Run() == (int)ResponseType.Accept)
+        {
+            string selectedPath = fileChooser.Filename;
+            if (!string.IsNullOrEmpty(selectedPath))
+            {
+                // Add path using yabridgectl
+                RunCommand($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"");
+                
+                // Refresh the list
+                RefreshPathList(listStore);
+            }
+        }
+
+        fileChooser.Destroy();
+    }
+
+    private void RemovePath(TreeView treeView, ListStore listStore)
+    {
+        TreeIter iter;
+        ITreeModel model;
+        
+        if (treeView.Selection.GetSelected(out model, out iter))
+        {
+            string selectedPath = (string)model.GetValue(iter, 0);
+            
+            // Confirm removal
+            var dialog = new MessageDialog(
+                null,
+                DialogFlags.Modal,
+                MessageType.Question,
+                ButtonsType.YesNo,
+                $"Remove path:\n{selectedPath}?");
+            
+            if (dialog.Run() == (int)ResponseType.Yes)
+            {
+                // Remove path using yabridgectl
+                RunCommand($"$HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"");
+                
+                // Refresh the list
+                RefreshPathList(listStore);
+            }
+            
+            dialog.Destroy();
+        }
+        else
+        {
+            var dialog = new MessageDialog(
+                null,
+                DialogFlags.Modal,
+                MessageType.Info,
+                ButtonsType.Ok,
+                "Please select a path to remove.");
+            dialog.Run();
+            dialog.Destroy();
+        }
     }
 
     public static void Main()
