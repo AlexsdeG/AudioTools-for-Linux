@@ -227,17 +227,50 @@ public class AudioTools
 
                 if (string.IsNullOrWhiteSpace(outCommand)) return;
 
-                yabridgeButton.Sensitive = false;
-                topControlsBox.Sensitive = false;
-                var progress = new Progress<string>(s => AppendOutput(s));
-                try
+                // Long-running operations (sync/verbose) get a cancellable progress dialog
+                bool isLong = selectedValue == "sync" || selectedValue == "verbose";
+                if (isLong)
                 {
-                     await RunCommandAsync(outCommand, progress, CancellationToken.None);
+                    var cts = new CancellationTokenSource();
+                    var dlg = new ProgressDialog(window, "yabridgectl");
+                    dlg.OnCancel += () =>
+                    {
+                        AppendOutput("Cancellation requested...");
+                        try { cts.Cancel(); } catch { }
+                    };
+
+                    yabridgeButton.Sensitive = false;
+                    topControlsBox.Sensitive = false;
+                    var progress = new Progress<string>(s => { AppendOutput(s); dlg.AppendLog(s); });
+                    try
+                    {
+                        await RunCommandAsync(outCommand, progress, cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        AppendOutput("Operation cancelled.");
+                    }
+                    finally
+                    {
+                        dlg.Close();
+                        yabridgeButton.Sensitive = true;
+                        topControlsBox.Sensitive = true;
+                    }
                 }
-                finally
+                else
                 {
-                     yabridgeButton.Sensitive = true;
-                     topControlsBox.Sensitive = true;
+                    yabridgeButton.Sensitive = false;
+                    topControlsBox.Sensitive = false;
+                    var progress = new Progress<string>(s => AppendOutput(s));
+                    try
+                    {
+                        await RunCommandAsync(outCommand, progress, CancellationToken.None);
+                    }
+                    finally
+                    {
+                        yabridgeButton.Sensitive = true;
+                        topControlsBox.Sensitive = true;
+                    }
                 }
           };
         hbox.PackStart(yabridgeButton, false, false, 5);
@@ -959,5 +992,56 @@ public class AudioTools
     public static void Main()
     {
         new AudioTools();
+    }
+}
+
+// Small progress dialog used for long-running yabridgectl operations.
+public class ProgressDialog
+{
+    private Dialog dialog;
+    private TextView textView;
+    private Spinner spinner;
+    private Button cancelButton;
+    public System.Action OnCancel;
+
+    public ProgressDialog(Window parent, string title = "Progress")
+    {
+        dialog = new Dialog(title, parent, DialogFlags.Modal);
+        dialog.SetDefaultSize(700, 360);
+
+        var content = dialog.ContentArea;
+
+        var hbox = new HBox(false, 6);
+        spinner = new Spinner();
+        spinner.Start();
+        hbox.PackStart(spinner, false, false, 6);
+
+        textView = new TextView { Editable = false, WrapMode = WrapMode.Word };
+        var sw = new ScrolledWindow();
+        sw.SetPolicy(PolicyType.Automatic, PolicyType.Automatic);
+        sw.Add(textView);
+        hbox.PackStart(sw, true, true, 6);
+
+        content.PackStart(hbox, true, true, 6);
+
+        cancelButton = new Button("Cancel");
+        cancelButton.Clicked += (s, e) => OnCancel?.Invoke();
+        dialog.AddActionWidget(cancelButton, ResponseType.Cancel);
+
+        dialog.ShowAll();
+    }
+
+    public void AppendLog(string line)
+    {
+        Application.Invoke(delegate
+        {
+            textView.Buffer.Text += line + "\n";
+            textView.ScrollToIter(textView.Buffer.EndIter, 0, false, 0, 0);
+        });
+    }
+
+    public void Close()
+    {
+        Application.Invoke(delegate { try { dialog.Destroy(); } catch { } });
     }
 }

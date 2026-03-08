@@ -74,7 +74,7 @@ Goals
 		 - Prevent nested clicks via a simple per-action `bool` guard or by disabling the full `topControlsBox` while operations run.
 	 - Why: Avoids duplicate operations and confusing state.
 
-4) [ ] Progress / cancellable dialog for long `yabridgectl` runs (Medium)
+4) [x] Progress / cancellable dialog for long `yabridgectl` runs (Medium)
 	 - Files: New small helper class `ProgressDialog` (GTK dialog with spinner, text area, Cancel button).
 	 - Tasks:
 		 - Show dialog when running `sync` or `sync -v`.
