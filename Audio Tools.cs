@@ -10,6 +10,7 @@ using Gtk;
 public class AudioTools
 {
     private TextView outputTextView;
+    private VBox topControlsBox;
 
     public AudioTools()
     {    	
@@ -27,7 +28,7 @@ public class AudioTools
         var vbox = new VBox();
 
         // Keep the controls area visually grouped with padding.
-        var topControlsBox = new VBox(false, 5)
+        topControlsBox = new VBox(false, 5)
         {
             BorderWidth = 10
         };
@@ -150,8 +151,8 @@ public class AudioTools
     hbox.PackStart(managePathsLabel, false, false, 5);
 
     // Create Manage Paths button
-        var managePathsButton = new Button("Manage Paths");
-        managePathsButton.Clicked += (sender, e) => ShowPathManagerWindow();
+    var managePathsButton = new Button("Manage Paths");
+    managePathsButton.Clicked += (sender, e) => ShowPathManagerWindow();
     hbox.PackStart(managePathsButton, false, false, 5);
     topControlsBox.PackStart(hbox, false, false, 5);
 
@@ -188,43 +189,57 @@ public class AudioTools
         topControlsBox.PackStart(hbox, false, true, 5);
 
         // Create a button
-        var yabridgeButton = new Button("Run");
-        yabridgeButton.Clicked += (sender, e) =>
-        {
-            string selectedValue = yabridgeComboBox.ActiveText;
-            string outCommand = "";
-            switch (selectedValue)
-		{
-		   case "sync":
-		      outCommand = "$HOME/.local/share/yabridge/yabridgectl sync";
-		   break;
-		   case "status":
-		      outCommand = "$HOME/.local/share/yabridge/yabridgectl status";
-		   break;
-		   case "prune":
-			outCommand = "$HOME/.local/share/yabridge/yabridgectl sync -p";
-		   break;
-		   case "list":
-		   	outCommand = "$HOME/.local/share/yabridge/yabridgectl list";
-		   break;
-		   case "verbose":
-		   	outCommand = "$HOME/.local/share/yabridge/yabridgectl sync -v";
-		   break;
-		   case "help":
-		   	RunCommand(@"echo Below is a list of commands that can be executed from AudioTools. For advanced steps visit https://github.com/robbert-vdh/yabridge.
-		   	echo -------------------------------
-		   	echo - sync: performs a sync between the paths for installed plugins and yabridge. 
-		   	echo - status: view the currently synced plugins and review their install locations.
-		   	echo - prune: performs a sync but also checks for plugins that are no longer installed and removes them from yabridge.
-		   	echo - list: views the directories that yabridge looks for plugins within.
-		   	echo - verbose: forces resync with all plugins. CAUTION: you may need to re-register/re-activate your plugins after running this command. Use only for last-resort debugging.");
-		   break;
-		   default:
-		      outCommand = "";
-		   break;
-		}
-            RunCommand(outCommand);
-        };
+          var yabridgeButton = new Button("Run");
+          yabridgeButton.Clicked += async (sender, e) =>
+          {
+                string selectedValue = yabridgeComboBox.ActiveText;
+                string outCommand = "";
+                switch (selectedValue)
+          {
+              case "sync":
+                  outCommand = "$HOME/.local/share/yabridge/yabridgectl sync";
+              break;
+              case "status":
+                  outCommand = "$HOME/.local/share/yabridge/yabridgectl status";
+              break;
+              case "prune":
+              	outCommand = "$HOME/.local/share/yabridge/yabridgectl sync -p";
+              break;
+              case "list":
+              	outCommand = "$HOME/.local/share/yabridge/yabridgectl list";
+              break;
+              case "verbose":
+              	outCommand = "$HOME/.local/share/yabridge/yabridgectl sync -v";
+              break;
+              case "help":
+              	RunCommand(@"echo Below is a list of commands that can be executed from AudioTools. For advanced steps visit https://github.com/robbert-vdh/yabridge.
+              	echo -------------------------------
+              	echo - sync: performs a sync between the paths for installed plugins and yabridge. 
+              	echo - status: view the currently synced plugins and review their install locations.
+              	echo - prune: performs a sync but also checks for plugins that are no longer installed and removes them from yabridge.
+              	echo - list: views the directories that yabridge looks for plugins within.
+              	echo - verbose: forces resync with all plugins. CAUTION: you may need to re-register/re-activate your plugins after running this command. Use only for last-resort debugging.");
+              break;
+              default:
+                  outCommand = "";
+              break;
+          }
+
+                if (string.IsNullOrWhiteSpace(outCommand)) return;
+
+                yabridgeButton.Sensitive = false;
+                topControlsBox.Sensitive = false;
+                var progress = new Progress<string>(s => AppendOutput(s));
+                try
+                {
+                     await RunCommandAsync(outCommand, progress, CancellationToken.None);
+                }
+                finally
+                {
+                     yabridgeButton.Sensitive = true;
+                     topControlsBox.Sensitive = true;
+                }
+          };
         hbox.PackStart(yabridgeButton, false, false, 5);
 
 /*
@@ -572,12 +587,12 @@ public class AudioTools
 
         // Add button
         var addButton = new Button("Add");
-        addButton.Clicked += (sender, e) => AddPath(listStore);
+        addButton.Clicked += async (sender, e) => await AddPathAsync(listStore);
         buttonBox.PackStart(addButton, true, true, 5);
 
         // Remove button
         var removeButton = new Button("Remove");
-        removeButton.Clicked += (sender, e) => RemovePath(treeView, listStore);
+        removeButton.Clicked += async (sender, e) => await RemovePathAsync(treeView, listStore);
         buttonBox.PackStart(removeButton, true, true, 5);
 
         // Close button
@@ -859,7 +874,7 @@ public class AudioTools
         }
     }
 
-    private void AddPath(ListStore listStore)
+    private async Task AddPathAsync(ListStore listStore)
     {
         var fileChooser = new FileChooserDialog(
             "Select Plugin Directory",
@@ -873,26 +888,34 @@ public class AudioTools
             string selectedPath = fileChooser.Filename;
             if (!string.IsNullOrEmpty(selectedPath))
             {
-                // Add path using yabridgectl
-                RunCommand($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"");
-                
-                // Refresh the list
-                RefreshPathList(listStore);
+                // Add path using yabridgectl asynchronously
+                topControlsBox.Sensitive = false;
+                var progress = new Progress<string>(s => AppendOutput(s));
+                try
+                {
+                    await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"", progress);
+                    // Refresh the list synchronously (uses compatibility wrapper)
+                    RefreshPathList(listStore);
+                }
+                finally
+                {
+                    topControlsBox.Sensitive = true;
+                }
             }
         }
 
         fileChooser.Destroy();
     }
 
-    private void RemovePath(TreeView treeView, ListStore listStore)
+    private async Task RemovePathAsync(TreeView treeView, ListStore listStore)
     {
         TreeIter iter;
         ITreeModel model;
-        
+
         if (treeView.Selection.GetSelected(out model, out iter))
         {
             string selectedPath = (string)model.GetValue(iter, 0);
-            
+
             // Confirm removal
             var dialog = new MessageDialog(
                 null,
@@ -900,16 +923,24 @@ public class AudioTools
                 MessageType.Question,
                 ButtonsType.YesNo,
                 $"Remove path:\n{selectedPath}?");
-            
+
             if (dialog.Run() == (int)ResponseType.Yes)
             {
-                // Remove path using yabridgectl
-                RunCommand($"$HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"");
-                
-                // Refresh the list
-                RefreshPathList(listStore);
+                // Remove path using yabridgectl asynchronously
+                topControlsBox.Sensitive = false;
+                var progress = new Progress<string>(s => AppendOutput(s));
+                try
+                {
+                    await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"", progress);
+                    // Refresh the list
+                    RefreshPathList(listStore);
+                }
+                finally
+                {
+                    topControlsBox.Sensitive = true;
+                }
             }
-            
+
             dialog.Destroy();
         }
         else

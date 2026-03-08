@@ -65,7 +65,7 @@ Goals
 		 - Report output via `progress.Report(line)` and marshal updates to the UI using `Application.Invoke`.
 	 - Why: Prevents UI freezes and supports streaming live output into the TextView.
 
-3) [ ] Disable controls / loading state pattern (Small)
+3) [x] Disable controls / loading state pattern (Small)
 	 - Files: `Audio Tools.cs` — all button click handlers that run long operations (`yabridgectl sync`, `list`, `status`, `AddPath`, `RemovePath`, plugin refresh).
 	 - Tasks:
 		 - On click, set `button.Sensitive = false` (or set a `Loading` label/icon).
