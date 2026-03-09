@@ -10,7 +10,7 @@ using Gtk;
 public class AudioTools
 {
     private TextView outputTextView;
-    private VBox topControlsBox;
+    private Box topControlsBox;
 
     public AudioTools()
     {    	
@@ -20,7 +20,7 @@ public class AudioTools
         SettingsManager.Load();
         
         // Create the main window
-        var appVersion = "0.98";
+        var appVersion = "0.99";
         var window = new Window("AudioTools v" + appVersion);
         // Restore saved size if present
         if (SettingsManager.Instance != null && SettingsManager.Instance.WindowWidth > 0 && SettingsManager.Instance.WindowHeight > 0)
@@ -48,17 +48,17 @@ public class AudioTools
         };
 
         // Create a vertical box to hold all sections
-        var vbox = new VBox();
+        var vbox = new Box(Orientation.Vertical, 0);
 
         // Keep the controls area visually grouped with padding.
-        topControlsBox = new VBox(false, 5)
+        topControlsBox = new Box(Orientation.Vertical, 5)
         {
             BorderWidth = 10
         };
 
 
         // Create an HBox to hold the two buttons side by side
-        var hbox = new HBox();
+        var hbox = new Box(Orientation.Horizontal, 0);
 
         var menuBar = new MenuBar();
         vbox.PackStart(menuBar, false, false, 0);
@@ -139,7 +139,7 @@ public class AudioTools
         };
         hbox.PackStart(sampleButton, false, false, 5);
 
-        hbox = new HBox();
+        hbox = new Box(Orientation.Horizontal, 0);
 
         // Create a label
         var bufferSizeLabel = new Label("Buffer Size:");
@@ -169,7 +169,7 @@ public class AudioTools
         hbox.PackStart(bufferButton, false, false, 5);
 
 
-	hbox = new HBox();
+        hbox = new Box(Orientation.Horizontal, 0);
     var managePathsLabel = new Label("Plugin Paths:");
     hbox.PackStart(managePathsLabel, false, false, 5);
 
@@ -179,7 +179,7 @@ public class AudioTools
     hbox.PackStart(managePathsButton, false, false, 5);
     topControlsBox.PackStart(hbox, false, false, 5);
 
-    hbox = new HBox();
+    hbox = new Box(Orientation.Horizontal, 0);
     var viewPluginsLabel = new Label("Plugin Browser:");
     hbox.PackStart(viewPluginsLabel, false, false, 5);
 
@@ -190,10 +190,10 @@ public class AudioTools
     topControlsBox.PackStart(hbox, false, false, 5);
 
         // Add spacing before the Yabridge controls section.
-        hbox = new HBox();
+        hbox = new Box(Orientation.Horizontal, 0);
         topControlsBox.PackStart(hbox, false, false, 2);
 
-        hbox = new HBox();
+        hbox = new Box(Orientation.Horizontal, 0);
 
         // Create a label
         var yabridgeLabel = new Label("Yabridge:");
@@ -344,7 +344,7 @@ public class AudioTools
         scrolledWindow.Add(outputTextView);
 
         // Add margins around output text area and clear button.
-        var outputSectionBox = new VBox(false, 5)
+        var outputSectionBox = new Box(Orientation.Vertical, 5)
         {
             BorderWidth = 10
         };
@@ -352,7 +352,9 @@ public class AudioTools
         // Add the controls section and output area.
         vbox.PackStart(topControlsBox, false, false, 0);
         outputSectionBox.PackStart(scrolledWindow, true, true, 0);
-        outputSectionBox.PackStart(clearButton, false, false, 0);
+        var clearButtonBox = new Box(Orientation.Horizontal, 0) { Halign = Align.Center };
+        clearButtonBox.PackStart(clearButton, false, false, 0);
+        outputSectionBox.PackStart(clearButtonBox, false, false, 0);
         vbox.PackStart(outputSectionBox, true, true, 0);
 
         // Create the EventBox container which will handle clicks
@@ -508,7 +510,7 @@ public class AudioTools
         pathWindow.DeleteEvent += (o, args) => pathWindow.Destroy();
 
         // Create main vertical box
-        var vbox = new VBox(false, 5);
+        var vbox = new Box(Orientation.Vertical, 5);
 
         // Create TreeView and ListStore for paths
         var listStore = new ListStore(typeof(string));
@@ -529,7 +531,7 @@ public class AudioTools
         vbox.PackStart(scrolledWindow, true, true, 5);
 
         // Create HBox for buttons
-        var buttonBox = new HBox(false, 5);
+        var buttonBox = new Box(Orientation.Horizontal, 5);
 
         // Add button
         var addButton = new Button("Add");
@@ -573,7 +575,7 @@ public class AudioTools
             pluginWindow.SetPosition(WindowPosition.Center);
             pluginWindow.DeleteEvent += (o, args) => pluginWindow.Destroy();
 
-            var vbox = new VBox(false, 6);
+            var vbox = new Box(Orientation.Vertical, 6);
 
             // 2. Setup TreeView and Store
             var pluginStore = new ListStore(typeof(string), typeof(string), typeof(string), typeof(string));
@@ -1025,7 +1027,7 @@ public class ProgressDialog
 
         var content = dialog.ContentArea;
 
-        var hbox = new HBox(false, 6);
+        var hbox = new Box(Orientation.Horizontal, 6);
         spinner = new Spinner();
         spinner.Start();
         hbox.PackStart(spinner, false, false, 6);

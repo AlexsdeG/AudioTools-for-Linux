@@ -154,7 +154,8 @@ Goals
 		 - Log commands, environment vars, and stderr to `AudioTools.log`.
 	 - Why: Easier diagnosis for support and persist useful preferences.
 
-9) [ ] UI polish & deprecated-ctor replacement (Small)
+
+9) [x] UI polish & deprecated-ctor replacement (Small)
 	 - Files: `Audio Tools.cs`.
 	 - Tasks:
 		 - Replace obsolete `new VBox()`/`new HBox()` constructors with `new Box(Orientation.Vertical, spacing)` where practical to remove deprecation warnings.

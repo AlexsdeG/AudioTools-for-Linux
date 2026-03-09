@@ -2,6 +2,16 @@
 
 All notable changes to AudioTools for Linux will be documented in this file.
 
+## [0.99.0] - 2026-03-09
+
+### Added
+- Settings persistence: `Settings.cs` saves window size/position, last yabridge action, and plugin paths under `~/.config/AudioTools/settings.json`.
+- Basic logging: `Logger.cs` writes `AudioTools.log` to `~/.config/AudioTools/`, recording yabridgectl commands, key env vars, and stderr lines.
+
+### Changed
+- Replaced deprecated `VBox`/`HBox` constructors with `Box(Orientation, spacing)` across the UI and centered the Clear button in the output area.
+- Wired `SettingsManager` and `Logger` into the app startup/shutdown flow to persist settings and record diagnostic information.
+
 ## [0.98.0] - 2026-03-09
 
 ### Fixed
