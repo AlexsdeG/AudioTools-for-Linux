@@ -686,7 +686,7 @@ public class AudioTools
     private void ShowSetupWindow()
     {
         var setupWindow = new Window("System Setup & Requirements");
-        setupWindow.SetDefaultSize(600, 400);
+        setupWindow.SetDefaultSize(800, 450);
         setupWindow.SetPosition(WindowPosition.Center);
         setupWindow.DeleteEvent += (o, args) => setupWindow.Destroy();
 
@@ -728,19 +728,22 @@ public class AudioTools
             // Check wget
             var wgetRes = await RequirementChecker.CheckToolAsync("wget");
             Application.Invoke(delegate { AddRequirementRow(requirementsList, "Wget", wgetRes.IsInstalled, string.IsNullOrWhiteSpace(wgetRes.Version) ? (wgetRes.IsInstalled ? "Installed" : "Not Installed") : wgetRes.Version, new System.Action(() => {
-                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+                // Install wget via interactive terminal
+                LaunchInTerminal(setupWindow, "sudo apt-get install -y wget");
             })); });
 
             // Check pactl (pipewire client)
             var pactlRes = await RequirementChecker.CheckToolAsync("pactl");
             Application.Invoke(delegate { AddRequirementRow(requirementsList, "PipeWire (pactl)", pactlRes.IsInstalled, pactlRes.Version ?? (pactlRes.IsInstalled ? "Installed" : "Not Installed"), new System.Action(() => {
-                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+                LaunchInTerminal(setupWindow, "sudo apt-get install -y pipewire pipewire-jack pipewire-alsa pipewire-pulse");
             })); });
 
             // Check wine
             var wineRes = await RequirementChecker.CheckWineAsync();
             Application.Invoke(delegate { AddRequirementRow(requirementsList, "Wine (< 9.21)", wineRes.IsInstalled && !wineRes.IsOlderThan921 ? true : wineRes.IsInstalled, wineRes.Version ?? (wineRes.IsInstalled ? "Installed" : "Not Installed"), new System.Action(() => {
-                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+                // Prepare install script and launch with sudo
+                WriteWineInstallScript();
+                LaunchInTerminal(setupWindow, "sudo bash /tmp/install_wine.sh");
             })); });
 
             // Check yabridgectl
@@ -752,13 +755,15 @@ public class AudioTools
             }
             catch { }
             Application.Invoke(delegate { AddRequirementRow(requirementsList, "Yabridge (yabridgectl)", yabridgeInstalled, yabridgeInstalled ? "Installed" : "Not Installed", new System.Action(() => {
-                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+                // Use terminal to run yabridge install commands (non-sudo)
+                var cmd = "wget -qO- https://api.github.com/repos/robbert-vdh/yabridge/releases/latest | grep \"yabridge.*tar.gz\" | cut -d : -f 2,3 | tr -d \\\" | xargs wget; find . -name 'yabridge*.tar.gz' -exec tar -xzf {} -C . \\; find . -name 'yabridge*.tar.gz' -exec rm {} \\; mv ./yabridge $HOME/.local/share; echo \"export PATH=\\\"$PATH:$HOME/.local/share/yabridge\\\"\" >> ~/.bashrc";
+                LaunchInTerminal(setupWindow, cmd);
             })); });
 
             // Check Microsoft Fonts
             var fonts = await RequirementChecker.CheckMicrosoftFontsAsync();
             Application.Invoke(delegate { AddRequirementRow(requirementsList, "Microsoft Fonts (mstcorefonts)", fonts, fonts ? "Installed" : "Not Installed", new System.Action(() => {
-                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+                LaunchInTerminal(setupWindow, "sudo apt-get install -y ttf-mscorefonts-installer; fc-cache -f -v");
             })); });
         }
 
@@ -784,7 +789,7 @@ public class AudioTools
 
     private void AddRequirementRow(Box parentBox, string name, bool isMet, string statusText, System.Action onInstall)
     {
-        var row = new Box(Orientation.Horizontal, 6);
+        var row = new Box(Orientation.Horizontal, 6) { Homogeneous = false };
         var nameLabel = new Label(name) { Halign = Align.Start };
         row.PackStart(nameLabel, true, true, 6);
 
@@ -795,6 +800,9 @@ public class AudioTools
         row.PackStart(statusLabel, false, false, 6);
 
         var installButton = new Button("Install") { Sensitive = !isMet };
+        installButton.WidthRequest = 120;
+        installButton.HeightRequest = 36;
+        installButton.Valign = Align.Start;
         installButton.Clicked += (s, e) => { try { onInstall(); } catch { } };
         row.PackStart(installButton, false, false, 6);
 
