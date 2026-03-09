@@ -9,6 +9,9 @@ All notable changes to AudioTools for Linux will be documented in this file.
 - Simplified path removal refresh flow to a single `RefreshPathListAsync` pass after removal delay.
 - Made path list refresh atomic by clearing and repopulating `ListStore` inside one GTK invoke block.
 
+### Changed
+- Centralized external process helpers into `Utils.cs` (`ProcessUtils`) and introduced `YabridgeService.cs` to host yabridgectl-specific operations. Removed duplicate process helper implementations from `Audio Tools.cs` and routed command output through the main UI via `AppendOutput`.
+
 ## [0.97.0] - 2026-03-09
 
 ### Fixed

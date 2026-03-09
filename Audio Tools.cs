@@ -48,24 +48,24 @@ public class AudioTools
         optionsMenuItem.Submenu = optionsMenu;
         
         // Launch winetricks
-		var winetricksItem = new MenuItem("Open Winetricks");
-		winetricksItem.Activated += (sender, e) => {
-			RunCommand("winetricks");
-		};
+        var winetricksItem = new MenuItem("Open Winetricks");
+        winetricksItem.Activated += (sender, e) => {
+            ProcessUtils.RunCommand("winetricks", s => AppendOutput(s));
+        };
 		optionsMenu.Append(winetricksItem);
 		
 		// Launch winecfg
-		var winecfgItem = new MenuItem("Open WINE config");
-		winecfgItem.Activated += (sender, e) => {
-			RunCommand("winecfg");
-		};
+        var winecfgItem = new MenuItem("Open WINE config");
+        winecfgItem.Activated += (sender, e) => {
+            ProcessUtils.RunCommand("winecfg", s => AppendOutput(s));
+        };
 		optionsMenu.Append(winecfgItem);
 		
 		// Launch wine uninstaller
-		var wineuninstItem = new MenuItem("Open WINE programs");
-		wineuninstItem.Activated += (sender, e) => {
-			RunCommand("wine uninstaller");
-		};
+        var wineuninstItem = new MenuItem("Open WINE programs");
+        wineuninstItem.Activated += (sender, e) => {
+            ProcessUtils.RunCommand("wine uninstaller", s => AppendOutput(s));
+        };
 		optionsMenu.Append(wineuninstItem);
 		
 		// Check for updates
@@ -73,12 +73,12 @@ public class AudioTools
 		updateItem.Activated += (sender, e) => 
         {
         	var yabridgeVersion = "";
-	        var checkyabridgeVersion = "";
-	        var checkAudioToolsVersion = "";
-	        yabridgeVersion = RunCommandWithReturn("$HOME/.local/share/yabridge/yabridgectl --version");
+                var checkyabridgeVersion = "";
+                var checkAudioToolsVersion = "";
+                yabridgeVersion = YabridgeService.RunCommandWithReturn("$HOME/.local/share/yabridge/yabridgectl --version");
         
-	        checkyabridgeVersion = RunCommandWithReturn("wget -qO- https://api.github.com/repos/robbert-vdh/yabridge/releases/latest | jq -r '.tag_name'");
-      		checkAudioToolsVersion = RunCommandWithReturn("wget -qO- https://api.github.com/repos/Heroin-Bob/AudioTools-for-Linux/releases/latest | jq -r '.tag_name'");
+                checkyabridgeVersion = ProcessUtils.RunCommandWithReturn("wget -qO- https://api.github.com/repos/robbert-vdh/yabridge/releases/latest | jq -r '.tag_name'");
+        		checkAudioToolsVersion = ProcessUtils.RunCommandWithReturn("wget -qO- https://api.github.com/repos/Heroin-Bob/AudioTools-for-Linux/releases/latest | jq -r '.tag_name'");
 	        using (MessageDialog md = new MessageDialog(null,
 	        DialogFlags.Modal,
 	        MessageType.Info,
@@ -112,7 +112,7 @@ public class AudioTools
         {
             string selectedValue = sampleComboBox.ActiveText;
             string concatCommand = "pw-metadata -n settings 0 clock.force-rate " + selectedValue;
-            RunCommand(concatCommand);
+            ProcessUtils.RunCommand(concatCommand, s => AppendOutput(s));
         };
         hbox.PackStart(sampleButton, false, false, 5);
 
@@ -141,7 +141,7 @@ public class AudioTools
         {
             string selectedValue = bufferComboBox.ActiveText;
             string concatCommand = "pw-metadata -n settings 0 clock.force-quantum " + selectedValue;
-            RunCommand(concatCommand);
+            ProcessUtils.RunCommand(concatCommand, s => AppendOutput(s));
         };
         hbox.PackStart(bufferButton, false, false, 5);
 
@@ -212,13 +212,13 @@ public class AudioTools
               	outCommand = "$HOME/.local/share/yabridge/yabridgectl sync -v";
               break;
               case "help":
-              	RunCommand(@"echo Below is a list of commands that can be executed from AudioTools. For advanced steps visit https://github.com/robbert-vdh/yabridge.
-              	echo -------------------------------
-              	echo - sync: performs a sync between the paths for installed plugins and yabridge. 
-              	echo - status: view the currently synced plugins and review their install locations.
-              	echo - prune: performs a sync but also checks for plugins that are no longer installed and removes them from yabridge.
-              	echo - list: views the directories that yabridge looks for plugins within.
-              	echo - verbose: forces resync with all plugins. CAUTION: you may need to re-register/re-activate your plugins after running this command. Use only for last-resort debugging.");
+                   ProcessUtils.RunCommand(@"echo Below is a list of commands that can be executed from AudioTools. For advanced steps visit https://github.com/robbert-vdh/yabridge.
+                   	echo -------------------------------
+                   	echo - sync: performs a sync between the paths for installed plugins and yabridge. 
+                   	echo - status: view the currently synced plugins and review their install locations.
+                   	echo - prune: performs a sync but also checks for plugins that are no longer installed and removes them from yabridge.
+                   	echo - list: views the directories that yabridge looks for plugins within.
+                   	echo - verbose: forces resync with all plugins. CAUTION: you may need to re-register/re-activate your plugins after running this command. Use only for last-resort debugging.", s => AppendOutput(s));
               break;
               default:
                   outCommand = "";
@@ -244,7 +244,7 @@ public class AudioTools
                     var progress = new Progress<string>(s => { AppendOutput(s); dlg.AppendLog(s); });
                     try
                     {
-                        await RunCommandAsync(outCommand, progress, cts.Token);
+                        await YabridgeService.RunCommandAsync(outCommand, progress, cts.Token);
                     }
                     catch (OperationCanceledException)
                     {
@@ -264,7 +264,7 @@ public class AudioTools
                     var progress = new Progress<string>(s => AppendOutput(s));
                     try
                     {
-                        await RunCommandAsync(outCommand, progress, CancellationToken.None);
+                        await YabridgeService.RunCommandAsync(outCommand, progress, CancellationToken.None);
                     }
                     finally
                     {
@@ -387,7 +387,7 @@ public class AudioTools
 			echo Number of new plugins: $num_new_plugins
 			echo Sample Rate: $sampleRate
 			echo Buffer Size: $bufferSize";
-        RunCommand(initCommand);
+        ProcessUtils.RunCommand(initCommand, s => AppendOutput(s));
 
 
         Application.Run();
@@ -405,158 +405,7 @@ public class AudioTools
     }
 
 
-    private void RunCommand(string command)
-    {
-    	var startIter = outputTextView.Buffer.StartIter;
-        outputTextView.ScrollToIter(startIter, 0, true, 0, 0);
-        // Clear previous output
-        outputTextView.Buffer.Text = "";
-	
-	
-        // Set up the process start info
-        var processStartInfo = new ProcessStartInfo
-        {
-            FileName = "/bin/bash",
-            Arguments = $"-c \"{command}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        // Start the process
-        using (var process = new Process { StartInfo = processStartInfo })
-        {
-            process.OutputDataReceived += (sender, args) =>
-            {
-                if (!string.IsNullOrEmpty(args.Data))
-                {
-
-                    AppendOutput(args.Data);
-
-                }
-            };
-
-            process.ErrorDataReceived += (sender, args) =>
-            {
-                if (!string.IsNullOrEmpty(args.Data))
-                {
-                    AppendOutput("Error: " + args.Data);
-
-
-                }
-            };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            process.WaitForExit();
-        }
-    }
-
-    public static async Task<string> RunCommandWithReturnAsync(string command, CancellationToken ct = default)
-    {
-        var output = new List<string>();
-
-        var processStartInfo = new ProcessStartInfo
-        {
-            FileName = "/bin/bash",
-            Arguments = $"-c \"{command}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using (var process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true })
-        {
-            var outputTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            process.OutputDataReceived += (sender, args) =>
-            {
-                if (args.Data == null)
-                {
-                    return;
-                }
-                output.Add(args.Data);
-            };
-
-            process.ErrorDataReceived += (sender, args) =>
-            {
-                if (args.Data == null)
-                {
-                    return;
-                }
-                output.Add("Error: " + args.Data);
-            };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            using (ct.Register(() =>
-            {
-                try { if (!process.HasExited) process.Kill(true); } catch { }
-            }))
-            {
-                await process.WaitForExitAsync(ct);
-            }
-        }
-
-        return string.Join("\n", output);
-    }
-
-    // Compatibility synchronous wrapper (keeps existing callsites working during refactor)
-    public static string RunCommandWithReturn(string command)
-    {
-        return RunCommandWithReturnAsync(command).GetAwaiter().GetResult();
-    }
-
-    public static async Task<int> RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
-    {
-        var processStartInfo = new ProcessStartInfo
-        {
-            FileName = "/bin/bash",
-            Arguments = $"-c \"{command}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using (var process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true })
-        {
-            process.OutputDataReceived += (sender, args) =>
-            {
-                if (!string.IsNullOrEmpty(args.Data))
-                {
-                    progress?.Report(args.Data);
-                }
-            };
-
-            process.ErrorDataReceived += (sender, args) =>
-            {
-                if (!string.IsNullOrEmpty(args.Data))
-                {
-                    progress?.Report("Error: " + args.Data);
-                }
-            };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            using (ct.Register(() =>
-            {
-                try { if (!process.HasExited) process.Kill(true); } catch { }
-            }))
-            {
-                await process.WaitForExitAsync(ct);
-            }
-            
-            return process.ExitCode;
-        }
-    }
+    
 
     private void ClearOutput()
     {
@@ -842,7 +691,7 @@ public class AudioTools
         pluginStore.Clear();
         try
         {
-            var statusOutput = await RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl status", ct);
+            var statusOutput = await YabridgeService.RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl status", ct);
             var plugins = ParsePluginStatus(statusOutput);
 
             if (plugins.Count == 0)
@@ -920,7 +769,7 @@ public class AudioTools
 
             // Run yabridgectl list command
             AppendOutput("[RefreshPathListAsync] Calling yabridgectl list...");
-            string output = await RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl list", ct);
+            string output = await YabridgeService.RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl list", ct);
             AppendOutput($"[RefreshPathListAsync] Got output, length={output.Length}");
 
             // Parse output and replace the full list in one GTK invoke so the UI stays in sync.
@@ -978,7 +827,7 @@ public class AudioTools
                     try
                     {
                         AppendOutput("[AddPathAsync] Running yabridgectl add...");
-                        int exitCode = await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"", progress);
+                        int exitCode = await YabridgeService.RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"", progress);
                         if (exitCode != 0)
                         {
                             AppendOutput($"[AddPathAsync] Command failed with exit code {exitCode}. Aborting.");
@@ -1024,7 +873,7 @@ public class AudioTools
                                 try
                                 {
                                     var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
-                                    await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
+                                    await YabridgeService.RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
                                 }
                                 catch (OperationCanceledException)
                                 {
@@ -1072,7 +921,7 @@ public class AudioTools
                 try
                 {
                     AppendOutput($"[RemovePathAsync] Running yabridgectl rm (thread={Environment.CurrentManagedThreadId})...");
-                    int exitCode = await RunCommandAsync($"yes | $HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"", progress);
+                    int exitCode = await YabridgeService.RunCommandAsync($"yes | $HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"", progress);
                     AppendOutput($"[RemovePathAsync] rm finished with exit code {exitCode}.");
 
                     // Give yabridge a moment to process filesystem/index updates.
@@ -1108,7 +957,7 @@ public class AudioTools
                     try
                     {
                         var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
-                        await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
+                        await YabridgeService.RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
                     }
                     catch (OperationCanceledException)
                     {
