@@ -418,16 +418,29 @@ public class AudioTools
         // Update the text view in the UI thread
         Application.Invoke(delegate
         {
-            if (text.Contains("TERM environment variable not set"))
+            try
             {
-                outputTextView.Buffer.Text += text.Replace("Error: TERM environment variable not set.", "");
-            }
-            else
-            {
-                outputTextView.Buffer.Text += text + "\n";
-            }
+                var buffer = outputTextView.Buffer;
+                var appendText = text.Contains("TERM environment variable not set")
+                    ? text.Replace("Error: TERM environment variable not set.", "")
+                    : text + "\n";
 
-            outputTextView.ScrollToIter(outputTextView.Buffer.EndIter, 0, false, 0, 0);
+                var end = buffer.EndIter;
+                buffer.Insert(ref end, appendText);
+
+                // Create temporary mark at the iterator returned from the insert (ensures mark is at new end)
+                var mark = buffer.CreateMark(null, end, false);
+                try
+                {
+                    // Use alignment when scrolling so yalign=1.0 forces the view to the very bottom.
+                    outputTextView.ScrollToMark(mark, 0, true, 0, 1.0);
+                }
+                finally
+                {
+                    try { buffer.DeleteMark(mark); } catch { }
+                }
+            }
+            catch { }
         });
     }
 
