@@ -8,7 +8,25 @@ public static class YabridgeService
 {
     public static Task<int> RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
     {
-        return ProcessUtils.RunCommandAsync(command, progress, ct);
+        // Wrap progress so that stderr lines can be additionally logged
+        IProgress<string> wrapped = null;
+        if (progress != null)
+        {
+            wrapped = new Progress<string>(line =>
+            {
+                try
+                {
+                    if (line != null && line.StartsWith("Error:"))
+                    {
+                        Logger.LogStderrLine(line);
+                    }
+                }
+                catch { }
+                progress.Report(line);
+            });
+        }
+
+        return ProcessUtils.RunCommandAsync(command, wrapped ?? progress, ct);
     }
 
     public static Task<string> RunCommandWithReturnAsync(string command, CancellationToken ct = default)

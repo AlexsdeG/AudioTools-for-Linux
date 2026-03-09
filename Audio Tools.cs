@@ -15,14 +15,37 @@ public class AudioTools
     public AudioTools()
     {    	
         Application.Init();
-	
+        // Initialize logging and load persisted settings
+        Logger.Init();
+        SettingsManager.Load();
         
         // Create the main window
         var appVersion = "0.98";
         var window = new Window("AudioTools v" + appVersion);
-        window.SetDefaultSize(400, 500);
+        // Restore saved size if present
+        if (SettingsManager.Instance != null && SettingsManager.Instance.WindowWidth > 0 && SettingsManager.Instance.WindowHeight > 0)
+        {
+            window.SetDefaultSize(SettingsManager.Instance.WindowWidth, SettingsManager.Instance.WindowHeight);
+        }
+        else
+        {
+            window.SetDefaultSize(400, 500);
+        }
         window.SetPosition(WindowPosition.Center);
-        window.DeleteEvent += (o, args) => Application.Quit();
+        window.DeleteEvent += (o, args) =>
+        {
+            try
+            {
+                // Persist window position/size and last action
+                try { window.GetSize(out int w, out int h); SettingsManager.Instance.WindowWidth = w; SettingsManager.Instance.WindowHeight = h; } catch { }
+                try { window.GetPosition(out int x, out int y); SettingsManager.Instance.WindowX = x; SettingsManager.Instance.WindowY = y; } catch { }
+                SettingsManager.Save();
+                Logger.LogInfo("Application exiting, settings saved.");
+            }
+            catch { }
+
+            Application.Quit();
+        };
 
         // Create a vertical box to hold all sections
         var vbox = new VBox();
@@ -227,6 +250,9 @@ public class AudioTools
 
                 if (string.IsNullOrWhiteSpace(outCommand)) return;
 
+                // Log the command and environment for diagnostics
+                try { Logger.LogCommand(outCommand, selectedValue); } catch { }
+
                 // Long-running operations (sync/verbose) get a cancellable progress dialog
                 bool isLong = selectedValue == "sync" || selectedValue == "verbose";
                 if (isLong)
@@ -245,6 +271,9 @@ public class AudioTools
                     try
                     {
                         await YabridgeService.RunCommandAsync(outCommand, progress, cts.Token);
+                        // persist last action
+                        SettingsManager.Instance.LastYabridgeAction = selectedValue;
+                        SettingsManager.Save();
                     }
                     catch (OperationCanceledException)
                     {
@@ -265,6 +294,9 @@ public class AudioTools
                     try
                     {
                         await YabridgeService.RunCommandAsync(outCommand, progress, CancellationToken.None);
+                        // persist last action
+                        SettingsManager.Instance.LastYabridgeAction = selectedValue;
+                        SettingsManager.Save();
                     }
                     finally
                     {

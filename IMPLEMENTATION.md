@@ -146,7 +146,8 @@ Goals
  	- Why: Prevent regressions and increase robustness.
  	- **Status:** ✅ Implemented — `PluginParser.cs` added; `Audio Tools.cs` updated to use `PluginParser.ParsePluginStatus`. Location normalization added (empty locations mapped to "-").
 
-8) [ ] Settings & logging (Small)
+
+8) [x] Settings & logging (Small)
 	 - Files: New `Settings.cs`, `Logger.cs`; create `~/.config/AudioTools/` directory.
 	 - Tasks:
 		 - Save last window position, last yabridge action, list of user-added plugin paths (optional).
