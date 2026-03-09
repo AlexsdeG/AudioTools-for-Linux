@@ -802,6 +802,78 @@ public class AudioTools
         parentBox.ShowAll();
     }
 
+    private void LaunchInTerminal(Window parent, string bashCommand)
+    {
+        string tmpPath = null;
+        try
+        {
+            // Write a temporary script to avoid complex command-line quoting
+            tmpPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"audiotools_install_{Guid.NewGuid()}.sh");
+            var script = "#!/bin/bash\n" + bashCommand + "\nread -p 'Press Enter to close'\n";
+            System.IO.File.WriteAllText(tmpPath, script);
+            try { System.IO.File.SetAttributes(tmpPath, System.IO.FileAttributes.Normal); } catch { }
+            try { var p = new System.Diagnostics.ProcessStartInfo(); System.IO.File.SetLastWriteTime(tmpPath, DateTime.Now); } catch { }
+
+            string[] candidates = { "x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm" };
+            bool started = false;
+            foreach (var term in candidates)
+            {
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = term,
+                        Arguments = $"-e /bin/bash \"{tmpPath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    var proc = System.Diagnostics.Process.Start(psi);
+                    if (proc != null)
+                    {
+                        started = true;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            if (!started)
+            {
+                throw new InvalidOperationException("No terminal emulator found to run interactive install.");
+            }
+        }
+        catch (Exception ex)
+        {
+            using var md = new MessageDialog(parent, DialogFlags.Modal, MessageType.Error, ButtonsType.Ok, $"Failed to launch terminal for install. Run this command manually:\n\n{bashCommand}\n\nError: {ex.Message}");
+            md.Run();
+            md.Destroy();
+        }
+        finally
+        {
+            try { if (tmpPath != null && System.IO.File.Exists(tmpPath)) { System.IO.File.Delete(tmpPath); } } catch { }
+        }
+    }
+
+    private void WriteWineInstallScript()
+    {
+        try
+        {
+            var repoScript = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".", "setup", "setup reqs.sh");
+            if (System.IO.File.Exists(repoScript))
+            {
+                System.IO.File.Copy(repoScript, "/tmp/install_wine.sh", true);
+                try { System.IO.File.SetLastWriteTime("/tmp/install_wine.sh", DateTime.Now); } catch { }
+            }
+            else
+            {
+                // Fallback: write a minimal wrapper that calls apt for wine (best-effort)
+                var fallback = "#!/bin/bash\necho 'Wine install script not found in repo; please run setup/setup reqs.sh manually.'\n";
+                System.IO.File.WriteAllText("/tmp/install_wine.sh", fallback);
+            }
+        }
+        catch { }
+    }
+
     private void OpenFolderLocation(Window parent, string location)
     {
         // Try letting the OS open the folder first (works for desktop environments and published single-file apps)
