@@ -2,6 +2,7 @@ using System;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
 
 public static class RequirementChecker
 {
@@ -62,6 +63,46 @@ public static class RequirementChecker
         {
             var outp = await ProcessUtils.RunCommandWithReturnAsync("fc-list | grep -i mscorefonts");
             return !string.IsNullOrWhiteSpace(outp);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static async Task<bool> CheckMicrosoftFontsAsync_Robust()
+    {
+        try
+        {
+            // Check common installation directories for msttcorefonts
+            var paths = new[] {
+                "/usr/share/fonts/truetype/msttcorefonts",
+                "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf",
+                "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf",
+                "/usr/share/fonts/truetype/msttcorefonts/Times New Roman.ttf",
+                "/usr/share/fonts/truetype/msttcorefonts/Times.ttf",
+                "/usr/share/fonts/truetype/msttcorefonts/arial.ttf"
+            };
+
+            foreach (var p in paths)
+            {
+                try { if (Directory.Exists(p) || File.Exists(p)) return true; } catch { }
+            }
+
+            // Fallback: look for well-known Microsoft font family names via fc-list
+            var grep = "fc-list : family | grep -i -E \"Times New Roman|Arial|Courier New|Georgia|Trebuchet\" || true";
+            var outp = await ProcessUtils.RunCommandWithReturnAsync(grep);
+            if (!string.IsNullOrWhiteSpace(outp)) return true;
+
+            // Also check whether the installer package is present (Debian/Ubuntu)
+            try
+            {
+                var dpkgOut = await ProcessUtils.RunCommandWithReturnAsync("dpkg -l ttf-mscorefonts-installer 2>/dev/null || true");
+                if (!string.IsNullOrWhiteSpace(dpkgOut) && dpkgOut.Contains("ttf-mscorefonts-installer")) return true;
+            }
+            catch { }
+
+            return false;
         }
         catch
         {

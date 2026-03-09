@@ -817,10 +817,11 @@ public class AudioTools
         {
             // Write a temporary script to avoid complex command-line quoting
             tmpPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"audiotools_install_{Guid.NewGuid()}.sh");
-            var script = "#!/bin/bash\n" + bashCommand + "\nread -p 'Press Enter to close'\n";
+            var script = "#!/bin/bash\nset -e\n" + bashCommand + "\nread -p 'Press Enter to close'\n";
             System.IO.File.WriteAllText(tmpPath, script);
             try { System.IO.File.SetAttributes(tmpPath, System.IO.FileAttributes.Normal); } catch { }
-            try { var p = new System.Diagnostics.ProcessStartInfo(); System.IO.File.SetLastWriteTime(tmpPath, DateTime.Now); } catch { }
+            try { System.IO.File.SetLastWriteTime(tmpPath, DateTime.Now); } catch { }
+            try { AppendOutput($"[Install] Wrote temp script: {tmpPath}"); } catch { }
 
             string[] candidates = { "x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm" };
             bool started = false;
@@ -828,37 +829,59 @@ public class AudioTools
             {
                 try
                 {
-                    var psi = new System.Diagnostics.ProcessStartInfo
+                    var psi = new System.Diagnostics.ProcessStartInfo();
+                    psi.FileName = term;
+
+                    // Different terminals expect different argument forms
+                    if (term == "gnome-terminal")
                     {
-                        FileName = term,
-                        Arguments = $"-e /bin/bash \"{tmpPath}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
+                        psi.Arguments = "-- /bin/bash -c \"bash '" + tmpPath + "' ; read -p \'Press Enter to close\'\"";
+                    }
+                    else if (term == "konsole")
+                    {
+                        psi.Arguments = "-e /bin/bash -c \"bash '" + tmpPath + "' ; read -p \'Press Enter to close\'\"";
+                    }
+                    else if (term == "xfce4-terminal")
+                    {
+                        psi.Arguments = "-e /bin/bash -c \"bash '" + tmpPath + "' ; read -p \'Press Enter to close\'\"";
+                    }
+                    else // x-terminal-emulator, xterm, or unknown
+                    {
+                        psi.Arguments = "-e /bin/bash -c \"bash '" + tmpPath + "' ; read -p \'Press Enter to close\'\"";
+                    }
+
+                    psi.UseShellExecute = true; // let the OS handle GUI terminal launching
+                    psi.CreateNoWindow = false;
                     var proc = System.Diagnostics.Process.Start(psi);
                     if (proc != null)
                     {
+                        try { AppendOutput($"[Install] Launched terminal '{term}' to run install script."); } catch { }
                         started = true;
                         break;
                     }
                 }
-                catch { }
+                catch (Exception ex) { try { AppendOutput($"[Install] Terminal '{term}' launch failed: {ex.Message}"); } catch { } }
             }
 
             if (!started)
             {
+                try { AppendOutput("[Install] No terminal emulator found to run interactive install."); } catch { }
                 throw new InvalidOperationException("No terminal emulator found to run interactive install.");
             }
+
+            // Schedule deletion of the temporary script after a short delay so the terminal can read it.
+            _ = Task.Run(async () => { try { await Task.Delay(30000); if (System.IO.File.Exists(tmpPath)) System.IO.File.Delete(tmpPath); } catch { } });
         }
         catch (Exception ex)
         {
+            try { AppendOutput($"[Install] Failed to launch terminal: {ex.Message}"); } catch { }
             using var md = new MessageDialog(parent, DialogFlags.Modal, MessageType.Error, ButtonsType.Ok, $"Failed to launch terminal for install. Run this command manually:\n\n{bashCommand}\n\nError: {ex.Message}");
             md.Run();
             md.Destroy();
         }
         finally
         {
-            try { if (tmpPath != null && System.IO.File.Exists(tmpPath)) { System.IO.File.Delete(tmpPath); } } catch { }
+            // don't delete immediately; cleanup is scheduled above
         }
     }
 
