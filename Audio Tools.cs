@@ -115,6 +115,26 @@ public class AudioTools
         };
         
 		optionsMenu.Append(updateItem);
+
+        // Create Setup menu
+        var setupMenuItem = new MenuItem("Setup");
+        menuBar.Add(setupMenuItem);
+
+        var setupMenu = new Menu();
+        setupMenuItem.Submenu = setupMenu;
+
+        var checkRequirementsItem = new MenuItem("Check Requirements");
+        checkRequirementsItem.Activated += (sender, e) => {
+            try
+            {
+                ShowSetupWindow();
+            }
+            catch (Exception ex)
+            {
+                AppendOutput("Error opening Setup window: " + ex.Message);
+            }
+        };
+        setupMenu.Append(checkRequirementsItem);
 		
 		
         // Create a label
@@ -641,6 +661,33 @@ public class AudioTools
         {
             Console.WriteLine("Error opening plugin browser: " + ex.Message);
         }
+    }
+
+    private void ShowSetupWindow()
+    {
+        var setupWindow = new Window("System Setup & Requirements");
+        setupWindow.SetDefaultSize(600, 400);
+        setupWindow.SetPosition(WindowPosition.Center);
+        setupWindow.DeleteEvent += (o, args) => setupWindow.Destroy();
+
+        var vbox = new Box(Orientation.Vertical, 6) { BorderWidth = 8 };
+
+        var refreshButton = new Button("Refresh Checks");
+        refreshButton.Clicked += (sender, e) =>
+        {
+            AppendOutput("[Setup] Refresh requested (not implemented yet)");
+        };
+        vbox.PackStart(refreshButton, false, false, 5);
+
+        var infoLabel = new Label("Setup UI not yet implemented. This will list required components and allow installations.");
+        vbox.PackStart(infoLabel, false, false, 6);
+
+        var closeButton = new Button("Close");
+        closeButton.Clicked += (s, e) => setupWindow.Destroy();
+        vbox.PackStart(closeButton, false, false, 5);
+
+        setupWindow.Add(vbox);
+        setupWindow.ShowAll();
     }
 
     private void OpenFolderLocation(Window parent, string location)
