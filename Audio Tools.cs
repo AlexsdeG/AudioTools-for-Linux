@@ -760,8 +760,8 @@ public class AudioTools
                 LaunchInTerminal(setupWindow, cmd);
             })); });
 
-            // Check Microsoft Fonts
-            var fonts = await RequirementChecker.CheckMicrosoftFontsAsync();
+            // Check Microsoft Fonts (robust)
+            var fonts = await RequirementChecker.CheckMicrosoftFontsAsync_Robust();
             Application.Invoke(delegate { AddRequirementRow(requirementsList, "Microsoft Fonts (mstcorefonts)", fonts, fonts ? "Installed" : "Not Installed", new System.Action(() => {
                 LaunchInTerminal(setupWindow, "sudo apt-get install -y ttf-mscorefonts-installer; fc-cache -f -v");
             })); });
