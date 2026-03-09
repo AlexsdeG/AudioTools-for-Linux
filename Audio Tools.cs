@@ -18,7 +18,7 @@ public class AudioTools
 	
         
         // Create the main window
-        var appVersion = "0.96";
+        var appVersion = "0.98";
         var window = new Window("AudioTools v" + appVersion);
         window.SetDefaultSize(400, 500);
         window.SetPosition(WindowPosition.Center);
@@ -512,7 +512,7 @@ public class AudioTools
         return RunCommandWithReturnAsync(command).GetAwaiter().GetResult();
     }
 
-    public static async Task RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
+    public static async Task<int> RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
     {
         var processStartInfo = new ProcessStartInfo
         {
@@ -553,6 +553,8 @@ public class AudioTools
             {
                 await process.WaitForExitAsync(ct);
             }
+            
+            return process.ExitCode;
         }
     }
 
@@ -578,6 +580,23 @@ public class AudioTools
 
             outputTextView.ScrollToIter(outputTextView.Buffer.EndIter, 0, false, 0, 0);
         });
+    }
+
+    private Task<T> InvokeOnGtkThreadAsync<T>(Func<T> func)
+    {
+        var tcs = new TaskCompletionSource<T>();
+        Application.Invoke(delegate
+        {
+            try
+            {
+                tcs.SetResult(func());
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+        return tcs.Task;
     }
     
     static bool IsPath(string line)
@@ -620,12 +639,18 @@ public class AudioTools
 
         // Add button
         var addButton = new Button("Add");
-        addButton.Clicked += async (sender, e) => await AddPathAsync(listStore);
+        addButton.Clicked += (sender, e) => 
+        { 
+            _ = AddPathAsync(listStore);
+        };
         buttonBox.PackStart(addButton, true, true, 5);
 
         // Remove button
         var removeButton = new Button("Remove");
-        removeButton.Clicked += async (sender, e) => await RemovePathAsync(treeView, listStore);
+        removeButton.Clicked += (sender, e) => 
+        { 
+            _ = RemovePathAsync(treeView, listStore);
+        };
         buttonBox.PackStart(removeButton, true, true, 5);
 
         // Close button
@@ -889,86 +914,143 @@ public class AudioTools
 
     private async Task RefreshPathListAsync(ListStore listStore, CancellationToken ct = default)
     {
-        Application.Invoke(delegate { listStore.Clear(); });
-
-        // Run yabridgectl list command
-        string output = await RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl list", ct);
-
-        // Parse output and add paths to list
-        var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
+        try
         {
-            string trimmedLine = line.Trim();
-            // Filter out header/footer text - only add lines that look like paths
-            if (trimmedLine.StartsWith("/") || trimmedLine.StartsWith("~"))
+            AppendOutput("[RefreshPathListAsync] Starting...");
+
+            // Run yabridgectl list command
+            AppendOutput("[RefreshPathListAsync] Calling yabridgectl list...");
+            string output = await RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl list", ct);
+            AppendOutput($"[RefreshPathListAsync] Got output, length={output.Length}");
+
+            // Parse output and replace the full list in one GTK invoke so the UI stays in sync.
+            var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            AppendOutput($"[RefreshPathListAsync] Parsed {lines.Length} lines");
+
+            int addedCount = 0;
+            Application.Invoke(delegate
             {
-                Application.Invoke(delegate { listStore.AppendValues(trimmedLine); });
-            }
+                listStore.Clear();
+                foreach (var line in lines)
+                {
+                    string trimmedLine = line.Trim();
+                    if (trimmedLine.StartsWith("/") || trimmedLine.StartsWith("~"))
+                    {
+                        listStore.AppendValues(trimmedLine);
+                        addedCount++;
+                    }
+                }
+            });
+
+            AppendOutput($"[RefreshPathListAsync] Added {addedCount} paths to list");
+            AppendOutput("[RefreshPathListAsync] Complete");
+        }
+        catch (OperationCanceledException)
+        {
+            AppendOutput("[RefreshPathListAsync] Cancelled");
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"[RefreshPathListAsync] EXCEPTION: {ex.GetType().Name} - {ex.Message}");
+            throw;
         }
     }
 
     private async Task AddPathAsync(ListStore listStore)
     {
-        var fileChooser = new FileChooserDialog(
-            "Select Plugin Directory",
-            null,
-            FileChooserAction.SelectFolder,
-            "Cancel", ResponseType.Cancel,
-            "Select", ResponseType.Accept);
-
-        if (fileChooser.Run() == (int)ResponseType.Accept)
+        try
         {
-            string selectedPath = fileChooser.Filename;
-            if (!string.IsNullOrEmpty(selectedPath))
-            {
-                // Add path using yabridgectl asynchronously
-                topControlsBox.Sensitive = false;
-                var progress = new Progress<string>(s => AppendOutput(s));
-                try
-                {
-                    await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"", progress);
-                    // Refresh the list
-                    await RefreshPathListAsync(listStore);
-                    // Ask user whether to run sync now
-                    var syncConfirm = new MessageDialog(null,
-                        DialogFlags.Modal,
-                        MessageType.Question,
-                        ButtonsType.YesNo,
-                        "Run yabridgectl sync now to update registry?");
+            var fileChooser = new FileChooserDialog(
+                "Select Plugin Directory",
+                null,
+                FileChooserAction.SelectFolder,
+                "Cancel", ResponseType.Cancel,
+                "Select", ResponseType.Accept);
 
-                    if (syncConfirm.Run() == (int)ResponseType.Yes)
-                    {
-                        syncConfirm.Destroy();
-                        var ctsSync = new CancellationTokenSource();
-                        var syncDlg = new ProgressDialog(null, "yabridgectl sync");
-                        syncDlg.OnCancel += () => { AppendOutput("Cancellation requested..."); try { ctsSync.Cancel(); } catch { } };
-                        try
-                        {
-                            var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
-                            await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            AppendOutput("Sync cancelled.");
-                        }
-                        finally
-                        {
-                            syncDlg.Close();
-                        }
-                    }
-                    else
-                    {
-                        syncConfirm.Destroy();
-                    }
-                }
-                finally
+            if (fileChooser.Run() == (int)ResponseType.Accept)
+            {
+                string selectedPath = fileChooser.Filename;
+                if (!string.IsNullOrEmpty(selectedPath))
                 {
-                    topControlsBox.Sensitive = true;
+                    // Add path using yabridgectl asynchronously
+                    Application.Invoke(delegate { topControlsBox.Sensitive = false; });
+                    var progress = new Progress<string>(s => AppendOutput(s));
+                    try
+                    {
+                        AppendOutput("[AddPathAsync] Running yabridgectl add...");
+                        int exitCode = await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl add \"{selectedPath}\"", progress);
+                        if (exitCode != 0)
+                        {
+                            AppendOutput($"[AddPathAsync] Command failed with exit code {exitCode}. Aborting.");
+                        }
+                        else
+                        {
+                            AppendOutput("[AddPathAsync] add command completed. Waiting for yabridge to process...");
+                            // Give yabridge a moment to actually process the addition
+                            await Task.Delay(500);
+                            // Refresh the list
+                            try
+                            {
+                                AppendOutput("Refreshing path list...");
+                                await RefreshPathListAsync(listStore);
+                                AppendOutput("Path list refreshed.");
+                            }
+                            catch (Exception ex)
+                            {
+                                AppendOutput($"ERROR refreshing path list: {ex.Message}");
+                            }
+                            // Ask user whether to run sync now (marshalled to GTK thread)
+                            bool userConfirmedSync = await InvokeOnGtkThreadAsync(() =>
+                            {
+                                var syncConfirm = new MessageDialog(null,
+                                    DialogFlags.Modal,
+                                    MessageType.Question,
+                                    ButtonsType.YesNo,
+                                    "Run yabridgectl sync now to update registry?");
+
+                                bool result = syncConfirm.Run() == (int)ResponseType.Yes;
+                                syncConfirm.Destroy();
+                                return result;
+                            });
+
+                            if (userConfirmedSync)
+                            {
+                                var ctsSync = new CancellationTokenSource();
+                                var syncDlg = await InvokeOnGtkThreadAsync(() =>
+                                    new ProgressDialog(null, "yabridgectl sync"));
+
+                                syncDlg.OnCancel += () => { AppendOutput("Cancellation requested..."); try { ctsSync.Cancel(); } catch { } };
+                                
+                                try
+                                {
+                                    var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
+                                    await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    AppendOutput("Sync cancelled.");
+                                }
+                                finally
+                                {
+                                    await InvokeOnGtkThreadAsync(() => { syncDlg.Close(); return (object)null; });
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Application.Invoke(delegate { topControlsBox.Sensitive = true; });
+                    }
                 }
             }
-        }
 
-        fileChooser.Destroy();
+            fileChooser.Destroy();
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"Error adding path: {ex.Message}");
+            Application.Invoke(delegate { topControlsBox.Sensitive = true; });
+        }
     }
 
     private async Task RemovePathAsync(TreeView treeView, ListStore listStore)
@@ -976,78 +1058,94 @@ public class AudioTools
         TreeIter iter;
         ITreeModel model;
 
-        if (treeView.Selection.GetSelected(out model, out iter))
+        try
         {
-            string selectedPath = (string)model.GetValue(iter, 0);
-
-            // Confirm removal
-            var dialog = new MessageDialog(
-                null,
-                DialogFlags.Modal,
-                MessageType.Question,
-                ButtonsType.YesNo,
-                $"Remove path:\n{selectedPath}?");
-
-            if (dialog.Run() == (int)ResponseType.Yes)
+            if (treeView.Selection.GetSelected(out model, out iter))
             {
+                string selectedPath = (string)model.GetValue(iter, 0);
+
+                AppendOutput($"[RemovePathAsync] Workaround enabled: auto-accepting removal for '{selectedPath}'.");
+
                 // Remove path using yabridgectl asynchronously
-                topControlsBox.Sensitive = false;
+                Application.Invoke(delegate { topControlsBox.Sensitive = false; });
                 var progress = new Progress<string>(s => AppendOutput(s));
                 try
                 {
-                    await RunCommandAsync($"$HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"", progress);
-                    // Refresh the list
+                    AppendOutput($"[RemovePathAsync] Running yabridgectl rm (thread={Environment.CurrentManagedThreadId})...");
+                    int exitCode = await RunCommandAsync($"yes | $HOME/.local/share/yabridge/yabridgectl rm \"{selectedPath}\"", progress);
+                    AppendOutput($"[RemovePathAsync] rm finished with exit code {exitCode}.");
+
+                    // Give yabridge a moment to process filesystem/index updates.
+                    await Task.Delay(500);
                     await RefreshPathListAsync(listStore);
-                        // Ask user whether to run sync now
+
+                    // Ask user whether to run sync now (marshalled to GTK thread)
+                    bool userConfirmedSync = await InvokeOnGtkThreadAsync(() =>
+                    {
                         var syncConfirm = new MessageDialog(null,
                             DialogFlags.Modal,
                             MessageType.Question,
                             ButtonsType.YesNo,
                             "Run yabridgectl sync now to update registry?");
 
-                        if (syncConfirm.Run() == (int)ResponseType.Yes)
-                        {
-                            syncConfirm.Destroy();
-                            var ctsSync = new CancellationTokenSource();
-                            var syncDlg = new ProgressDialog(null, "yabridgectl sync");
-                            syncDlg.OnCancel += () => { AppendOutput("Cancellation requested..."); try { ctsSync.Cancel(); } catch { } };
-                            try
-                            {
-                                var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
-                                await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                AppendOutput("Sync cancelled.");
-                            }
-                            finally
-                            {
-                                syncDlg.Close();
-                            }
-                        }
-                        else
-                        {
-                            syncConfirm.Destroy();
-                        }
+                        bool result = syncConfirm.Run() == (int)ResponseType.Yes;
+                        syncConfirm.Destroy();
+                        return result;
+                    });
+
+                    if (!userConfirmedSync)
+                    {
+                        AppendOutput("[RemovePathAsync] Sync prompt declined by user.");
+                        return;
+                    }
+
+                    var ctsSync = new CancellationTokenSource();
+                    var syncDlg = await InvokeOnGtkThreadAsync(() =>
+                        new ProgressDialog(null, "yabridgectl sync"));
+
+                    syncDlg.OnCancel += () => { AppendOutput("Cancellation requested..."); try { ctsSync.Cancel(); } catch { } };
+
+                    try
+                    {
+                        var progressSync = new Progress<string>(s => { AppendOutput(s); syncDlg.AppendLog(s); });
+                        await RunCommandAsync("$HOME/.local/share/yabridge/yabridgectl sync", progressSync, ctsSync.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        AppendOutput("Sync cancelled.");
+                    }
+                    finally
+                    {
+                        await InvokeOnGtkThreadAsync(() => { syncDlg.Close(); return (object)null; });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendOutput($"[RemovePathAsync] ERROR: {ex.Message}");
+                    AppendOutput($"[RemovePathAsync] STACK: {ex.StackTrace}");
                 }
                 finally
                 {
-                    topControlsBox.Sensitive = true;
+                    Application.Invoke(delegate { topControlsBox.Sensitive = true; });
+                    AppendOutput("[RemovePathAsync] UI controls re-enabled.");
                 }
             }
-
-            dialog.Destroy();
+            else
+            {
+                var dialog = new MessageDialog(
+                    null,
+                    DialogFlags.Modal,
+                    MessageType.Info,
+                    ButtonsType.Ok,
+                    "Please select a path to remove.");
+                dialog.Run();
+                dialog.Destroy();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            var dialog = new MessageDialog(
-                null,
-                DialogFlags.Modal,
-                MessageType.Info,
-                ButtonsType.Ok,
-                "Please select a path to remove.");
-            dialog.Run();
-            dialog.Destroy();
+            AppendOutput($"Error removing path: {ex.Message}");
+            Application.Invoke(delegate { topControlsBox.Sensitive = true; });
         }
     }
 

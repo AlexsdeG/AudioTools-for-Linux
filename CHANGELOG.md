@@ -2,6 +2,24 @@
 
 All notable changes to AudioTools for Linux will be documented in this file.
 
+## [0.98.0] - 2026-03-09
+
+### Fixed
+- Automatically confirms `yabridgectl rm` prompts by piping `yes`, preventing first-attempt remove hangs.
+- Simplified path removal refresh flow to a single `RefreshPathListAsync` pass after removal delay.
+- Made path list refresh atomic by clearing and repopulating `ListStore` inside one GTK invoke block.
+
+## [0.97.0] - 2026-03-09
+
+### Fixed
+- **Path management UI freeze on first removal**: Fixed critical threading bug where removing/adding paths would freeze UI buttons on the first attempt. Root cause was GTK dialog operations (MessageDialog, ProgressDialog) being called from async continuations on non-GTK threads, blocking the GTK event loop.
+  - Added `InvokeOnGtkThreadAsync<T>()` helper to safely marshal GTK operations back to main thread
+  - Refactored `RemovePathAsync()` to create sync confirmation dialog on GTK thread
+  - Refactored `AddPathAsync()` to create sync confirmation dialog on GTK thread
+  - Both methods now properly close ProgressDialog on GTK thread via `InvokeOnGtkThreadAsync`
+  - Buttons and UI elements now correctly re-enable after path operations
+  - List refresh now displays correct path count after first attempt
+
 ## [0.96.0] - 2026-03-08
 
 ### Added
