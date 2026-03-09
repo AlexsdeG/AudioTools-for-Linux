@@ -692,22 +692,114 @@ public class AudioTools
 
         var vbox = new Box(Orientation.Vertical, 6) { BorderWidth = 8 };
 
+        // Refresh button
         var refreshButton = new Button("Refresh Checks");
-        refreshButton.Clicked += (sender, e) =>
-        {
-            AppendOutput("[Setup] Refresh requested (not implemented yet)");
-        };
         vbox.PackStart(refreshButton, false, false, 5);
 
-        var infoLabel = new Label("Setup UI not yet implemented. This will list required components and allow installations.");
-        vbox.PackStart(infoLabel, false, false, 6);
+        // Scrolled area with requirements list
+        var scrolled = new ScrolledWindow();
+        scrolled.SetPolicy(PolicyType.Automatic, PolicyType.Automatic);
+        var requirementsList = new Box(Orientation.Vertical, 6) { BorderWidth = 6 };
+        scrolled.Add(requirementsList);
+        vbox.PackStart(scrolled, true, true, 5);
 
+        // Close button
         var closeButton = new Button("Close");
         closeButton.Clicked += (s, e) => setupWindow.Destroy();
         vbox.PackStart(closeButton, false, false, 5);
 
         setupWindow.Add(vbox);
+
+        // Helper to populate rows asynchronously
+        async Task PopulateChecksAsync()
+        {
+            Application.Invoke(delegate {
+                try
+                {
+                    var existing = requirementsList.Children;
+                    foreach (var c in existing)
+                    {
+                        try { requirementsList.Remove(c); } catch { }
+                    }
+                }
+                catch { }
+            });
+
+            // Check wget
+            var wgetRes = await RequirementChecker.CheckToolAsync("wget");
+            Application.Invoke(delegate { AddRequirementRow(requirementsList, "Wget", wgetRes.IsInstalled, string.IsNullOrWhiteSpace(wgetRes.Version) ? (wgetRes.IsInstalled ? "Installed" : "Not Installed") : wgetRes.Version, new System.Action(() => {
+                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+            })); });
+
+            // Check pactl (pipewire client)
+            var pactlRes = await RequirementChecker.CheckToolAsync("pactl");
+            Application.Invoke(delegate { AddRequirementRow(requirementsList, "PipeWire (pactl)", pactlRes.IsInstalled, pactlRes.Version ?? (pactlRes.IsInstalled ? "Installed" : "Not Installed"), new System.Action(() => {
+                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+            })); });
+
+            // Check wine
+            var wineRes = await RequirementChecker.CheckWineAsync();
+            Application.Invoke(delegate { AddRequirementRow(requirementsList, "Wine (< 9.21)", wineRes.IsInstalled && !wineRes.IsOlderThan921 ? true : wineRes.IsInstalled, wineRes.Version ?? (wineRes.IsInstalled ? "Installed" : "Not Installed"), new System.Action(() => {
+                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+            })); });
+
+            // Check yabridgectl
+            bool yabridgeInstalled = false;
+            try
+            {
+                var userYb = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/yabridge/yabridgectl");
+                yabridgeInstalled = System.IO.File.Exists(userYb) || !string.IsNullOrWhiteSpace((await ProcessUtils.RunCommandWithReturnAsync("which yabridgectl")).Trim());
+            }
+            catch { }
+            Application.Invoke(delegate { AddRequirementRow(requirementsList, "Yabridge (yabridgectl)", yabridgeInstalled, yabridgeInstalled ? "Installed" : "Not Installed", new System.Action(() => {
+                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+            })); });
+
+            // Check Microsoft Fonts
+            var fonts = await RequirementChecker.CheckMicrosoftFontsAsync();
+            Application.Invoke(delegate { AddRequirementRow(requirementsList, "Microsoft Fonts (mstcorefonts)", fonts, fonts ? "Installed" : "Not Installed", new System.Action(() => {
+                using var md = new MessageDialog(setupWindow, DialogFlags.Modal, MessageType.Info, ButtonsType.Ok, "Install action will be wired in Phase 4."); md.Run(); md.Destroy();
+            })); });
+        }
+
+        // Wire refresh button
+        refreshButton.Clicked += async (s, e) =>
+        {
+            refreshButton.Sensitive = false;
+            try
+            {
+                await PopulateChecksAsync();
+            }
+            finally
+            {
+                refreshButton.Sensitive = true;
+            }
+        };
+
+        // Populate initially
+        _ = PopulateChecksAsync();
+
         setupWindow.ShowAll();
+    }
+
+    private void AddRequirementRow(Box parentBox, string name, bool isMet, string statusText, System.Action onInstall)
+    {
+        var row = new Box(Orientation.Horizontal, 6);
+        var nameLabel = new Label(name) { Halign = Align.Start };
+        row.PackStart(nameLabel, true, true, 6);
+
+        var statusLabel = new Label();
+        var color = isMet ? "green" : "red";
+        var emoji = isMet ? "✅" : "❌";
+        statusLabel.Markup = $"<span foreground='{color}'>{emoji} {System.Security.SecurityElement.Escape(statusText)}</span>";
+        row.PackStart(statusLabel, false, false, 6);
+
+        var installButton = new Button("Install") { Sensitive = !isMet };
+        installButton.Clicked += (s, e) => { try { onInstall(); } catch { } };
+        row.PackStart(installButton, false, false, 6);
+
+        parentBox.PackStart(row, false, false, 4);
+        parentBox.ShowAll();
     }
 
     private void OpenFolderLocation(Window parent, string location)
