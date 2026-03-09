@@ -414,6 +414,26 @@ public class AudioTools
         window.Add(vbox);
         window.ShowAll();
 
+        // Temporary: run requirement checks in background and log results for verification
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var wgetResult = await RequirementChecker.CheckToolAsync("wget");
+                AppendOutput($"[RequirementCheck] wget installed={wgetResult.IsInstalled}, version='{wgetResult.Version}'");
+
+                var wineResult = await RequirementChecker.CheckWineAsync();
+                AppendOutput($"[RequirementCheck] wine installed={wineResult.IsInstalled}, isOlderThan9.21={wineResult.IsOlderThan921}, version='{wineResult.Version}'");
+
+                var fonts = await RequirementChecker.CheckMicrosoftFontsAsync();
+                AppendOutput($"[RequirementCheck] microsoft fonts installed={fonts}");
+            }
+            catch (Exception ex)
+            {
+                AppendOutput($"[RequirementCheck] error: {ex.Message}");
+            }
+        });
+
 
 	string initCommand = @"#!/bin/bash        	
 			sampleRate=$(pw-metadata -n settings 0 clock.force-rate | grep -oP '\d+' | tail -n 1)

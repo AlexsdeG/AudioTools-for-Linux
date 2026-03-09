@@ -2,6 +2,15 @@
 
 All notable changes to AudioTools for Linux will be documented in this file.
 
+## [0.99.1] - 2026-03-09
+
+### Added
+- Setup menu and `Check Requirements` menu item in the main menu.
+- `RequirementChecker.cs` with `CheckToolAsync`, Wine version parsing (`ParseWineVersion`), and Microsoft Fonts check.
+
+### Changed
+- Instrumented startup to run requirement checks and log results to the UI output for verification.
+
 ## [0.99.0] - 2026-03-09
 
 ### Added
