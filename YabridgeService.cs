@@ -6,10 +6,10 @@ using System.Threading.Tasks;
 
 public static class YabridgeService
 {
-    public static Task<int> RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
+    public static Task<int> RunCommandAsync(string command, IProgress<string>? progress, CancellationToken ct = default)
     {
         // Wrap progress so that stderr lines can be additionally logged
-        IProgress<string> wrapped = null;
+        IProgress<string>? wrapped = null;
         if (progress != null)
         {
             wrapped = new Progress<string>(line =>
@@ -22,7 +22,7 @@ public static class YabridgeService
                     }
                 }
                 catch { }
-                progress.Report(line);
+                if (line != null) progress?.Report(line);
             });
         }
 

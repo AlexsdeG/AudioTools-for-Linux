@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 public static class ProcessUtils
 {
-    public static void RunCommand(string command, Action<string> onOutput = null)
+    public static void RunCommand(string command, Action<string>? onOutput = null)
     {
         var processStartInfo = new ProcessStartInfo
         {
@@ -29,7 +29,7 @@ public static class ProcessUtils
         }
     }
 
-    public static async Task<int> RunCommandAsync(string command, IProgress<string> progress, CancellationToken ct = default)
+    public static async Task<int> RunCommandAsync(string command, IProgress<string>? progress, CancellationToken ct = default)
     {
         var processStartInfo = new ProcessStartInfo
         {

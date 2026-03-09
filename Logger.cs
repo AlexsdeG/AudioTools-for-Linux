@@ -4,7 +4,7 @@ using System.IO;
 public static class Logger
 {
     private static readonly object _lock = new object();
-    private static string logPath;
+    private static string logPath = string.Empty;
 
     public static void Init()
     {

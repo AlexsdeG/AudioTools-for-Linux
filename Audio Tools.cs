@@ -1018,7 +1018,7 @@ public class ProgressDialog
     private TextView textView;
     private Spinner spinner;
     private Button cancelButton;
-    public System.Action OnCancel;
+    public System.Action? OnCancel;
 
     public ProgressDialog(Window parent, string title = "Progress")
     {
