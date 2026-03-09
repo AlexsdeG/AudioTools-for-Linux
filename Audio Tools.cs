@@ -692,7 +692,7 @@ public class AudioTools
         try
         {
             var statusOutput = await YabridgeService.RunCommandWithReturnAsync("$HOME/.local/share/yabridge/yabridgectl status", ct);
-            var plugins = ParsePluginStatus(statusOutput);
+            var plugins = PluginParser.ParsePluginStatus(statusOutput);
 
             if (plugins.Count == 0)
             {
@@ -719,47 +719,7 @@ public class AudioTools
         }
     }
 
-    private List<(string Name, string Type, string Location)> ParsePluginStatus(string output)
-    {
-        var plugins = new List<(string Name, string Type, string Location)>();
-        var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        string currentDirectory = string.Empty;
-
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.TrimEnd();
-            var trimmed = line.Trim();
-
-            if (string.IsNullOrWhiteSpace(trimmed)) continue;
-
-            if (trimmed.StartsWith("/") && !trimmed.Contains("::"))
-            {
-                currentDirectory = trimmed.TrimEnd('/');
-                continue;
-            }
-
-            if (!line.StartsWith("  ") || !trimmed.Contains("::")) continue;
-
-            var pluginParts = trimmed.Split(new[] { "::" }, 2, StringSplitOptions.RemoveEmptyEntries);
-            if (pluginParts.Length < 2) continue;
-
-            var relativePluginPath = pluginParts[0].Trim();
-            var metadataTokens = pluginParts[1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            var pluginType = metadataTokens.Length > 0 ? metadataTokens[0].Trim() : "Unknown";
-
-            var relativeDirectory = System.IO.Path.GetDirectoryName(relativePluginPath);
-            var location = string.IsNullOrEmpty(relativeDirectory)
-                ? currentDirectory
-                : System.IO.Path.Combine(currentDirectory, relativeDirectory).Replace("\\", "/");
-
-            var pluginName = System.IO.Path.GetFileNameWithoutExtension(relativePluginPath);
-            if (string.IsNullOrEmpty(pluginName)) pluginName = relativePluginPath;
-
-            plugins.Add((pluginName, pluginType, location));
-        }
-
-        return plugins;
-    }
+    
 
     private async Task RefreshPathListAsync(ListStore listStore, CancellationToken ct = default)
     {

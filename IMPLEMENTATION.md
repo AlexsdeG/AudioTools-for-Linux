@@ -138,12 +138,13 @@ Goals
 		 - Centralized logging and environment checks.
 	 - Why: Easier testing, reuse, and clearer UI code.
 
-7) [ ] Parser hardening & unit tests (Small → Medium)
-	 - Files: Extract `ParsePluginStatus` into `PluginParser.cs`.
-	 - Tasks:
-		 - Add unit tests (new test project) for multiple `yabridgectl status` sample outputs (edge cases, different formats).
-		 - Normalize paths and handle empty/unknown entries.
-	 - Why: Prevent regressions and increase robustness.
+7) [x] Parser hardening & unit tests (Small → Medium)
+ 	- Files: Extract `ParsePluginStatus` into `PluginParser.cs`.
+ 	- Tasks:
+ 		- Add unit tests (new test project) for multiple `yabridgectl status` sample outputs (edge cases, different formats).
+ 		- Normalize paths and handle empty/unknown entries.
+ 	- Why: Prevent regressions and increase robustness.
+ 	- **Status:** ✅ Implemented — `PluginParser.cs` added; `Audio Tools.cs` updated to use `PluginParser.ParsePluginStatus`. Location normalization added (empty locations mapped to "-").
 
 8) [ ] Settings & logging (Small)
 	 - Files: New `Settings.cs`, `Logger.cs`; create `~/.config/AudioTools/` directory.

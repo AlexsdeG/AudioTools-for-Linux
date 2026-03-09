@@ -11,6 +11,7 @@ All notable changes to AudioTools for Linux will be documented in this file.
 
 ### Changed
 - Centralized external process helpers into `Utils.cs` (`ProcessUtils`) and introduced `YabridgeService.cs` to host yabridgectl-specific operations. Removed duplicate process helper implementations from `Audio Tools.cs` and routed command output through the main UI via `AppendOutput`.
+ - Extracted `ParsePluginStatus` into `PluginParser.cs` and normalized plugin locations when missing.
 
 ## [0.97.0] - 2026-03-09
 
