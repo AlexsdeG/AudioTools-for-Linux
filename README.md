@@ -150,6 +150,17 @@ At this point your setup is finished and you can now install and use Windows plu
 
 </details>
 
+## Features (recent)
+
+- Plugin Browser: view synced plugins (Name, Type, Location) and open their containing folder.
+- Path Manager: add/remove plugin directories that yabridge scans (with async refresh and prompts to sync).
+- Robust yabridgectl integration: async process helpers, streamed output, cancellable `sync` with progress dialog.
+- Settings & Logging: settings persisted to `~/.config/AudioTools/settings.json` and logs written to `~/.config/AudioTools/AudioTools.log` for diagnostics.
+- Code organization: process helpers, parsing, and yabridge-specific logic split into `Utils.cs`, `PluginParser.cs`, and `YabridgeService.cs` for easier maintenance.
+- UI polish: replaced deprecated GTK ctor usage, centered output Clear button, and various UX fixes.
+
+These items reflect recent refactors and new functionality to make yabridgectl operations reliable and the UI more responsive.
+
 
 ## FAQ
 <b><i>Why does the WINE version need to be less than 9.21?</i></b><br>
