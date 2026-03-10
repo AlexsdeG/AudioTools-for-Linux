@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- Configuration ---
-VERSION="0.99.0"
+VERSION="0.99"
 ARCH="amd64"
 APP_NAME="audiotools"
 DEB_DIR="${APP_NAME}_${VERSION}_${ARCH}"
