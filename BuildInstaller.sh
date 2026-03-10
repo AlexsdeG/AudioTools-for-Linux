@@ -1,12 +1,13 @@
 #!/bin/bash
 
 # --- Configuration ---
-VERSION="1.0.0"
+VERSION="0.99.0"
 ARCH="amd64"
 APP_NAME="audiotools"
 DEB_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 BUILD_DIR="Build"
 APPDIR="${APP_NAME}.AppDir"
+OUTPUT_APPIMAGE="AudioTools-v${VERSION}-x86_64.AppImage"
 
 echo "========================================="
 echo " Building AudioTools v${VERSION}         "
@@ -73,66 +74,54 @@ fi
 # 3. Build the .AppImage
 # =========================================
 echo "-> Preparing AppDir for AppImage..."
-mkdir -p "${APPDIR}/usr/bin"
-cp "${PUBLISH_DIR}/AudioTools" "${APPDIR}/usr/bin/audiotools"
-chmod +x "${APPDIR}/usr/bin/audiotools"
+mkdir -p ${APPDIR}/usr/bin
+cp ${PUBLISH_DIR}/AudioTools ${APPDIR}/usr/bin/audiotools
+chmod +x ${APPDIR}/usr/bin/audiotools
 
 # AppImages require the icon and desktop file at the root of the AppDir
-cp AudioTools_icon256.png "${APPDIR}/audiotools.png"
-cp "${DEB_DIR}/usr/share/applications/audiotools.desktop" "${APPDIR}/audiotools.desktop"
+cp AudioTools_icon256.png ${APPDIR}/audiotools.png
+cp ${DEB_DIR}/usr/share/applications/audiotools.desktop ${APPDIR}/audiotools.desktop
 
-# Create the AppRun symlink (this tells the AppImage what to launch)
-cd "${APPDIR}" || exit 1
-ln -sf usr/bin/audiotools AppRun
-cd ..
+# Create a proper AppRun script (symlinks can sometimes fail in AppImages for .NET apps)
+cat << 'EOF' > ${APPDIR}/AppRun
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="${HERE}/usr/bin:${PATH}"
+exec "${HERE}/usr/bin/audiotools" "$@"
+EOF
+chmod +x ${APPDIR}/AppRun
 
-# Download appimagetool reliably
-APPIMAGETOOL="appimagetool-x86_64.AppImage"
-OUTPUT_APPIMAGE="AudioTools-v${VERSION}-x86_64.AppImage"
-
-# Remove any stale appimagetool to force fresh download
-if [ -f "${APPIMAGETOOL}" ]; then
-    echo "-> Removing stale ${APPIMAGETOOL}"
-    rm -f "${APPIMAGETOOL}"
-fi
-
-echo "-> Downloading appimagetool..."
-DOWNLOAD_OK=0
-if wget -q -O "${APPIMAGETOOL}" "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"; then
-    chmod +x "${APPIMAGETOOL}" || true
-    echo "-> appimagetool downloaded"
-    DOWNLOAD_OK=1
-else
-    echo "-> ERROR: Failed to download appimagetool." >&2
-    # remove any partial file
-    if [ -f "${APPIMAGETOOL}" ]; then rm -f "${APPIMAGETOOL}"; fi
+# Download appimagetool using curl (more reliable for GitHub redirects)
+if [ ! -f "appimagetool-x86_64.AppImage" ]; then
+    echo "-> Downloading appimagetool..."
+    curl -L -o appimagetool-x86_64.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+    
+    if [ ! -f "appimagetool-x86_64.AppImage" ] || [ ! -s "appimagetool-x86_64.AppImage" ]; then
+        echo "-> ERROR: Failed to download appimagetool. Check your internet connection."
+        exit 1
+    fi
+    chmod +x appimagetool-x86_64.AppImage
 fi
 
 echo "-> Building AppImage..."
-if [ "${DOWNLOAD_OK}" -eq 1 ] && [ -x "${APPIMAGETOOL}" ]; then
-    # Extract-and-run to create the AppImage
-    if ./${APPIMAGETOOL} --appimage-extract-and-run "${APPDIR}" "${OUTPUT_APPIMAGE}"; then
-        if [ -f "${OUTPUT_APPIMAGE}" ]; then
-            mkdir -p "${BUILD_DIR}"
-            mv "${OUTPUT_APPIMAGE}" "${BUILD_DIR}/"
-            echo "-> AppImage created: ${BUILD_DIR}/${OUTPUT_APPIMAGE}"
-        else
-            echo "-> ERROR: appimagetool reported success but output AppImage not found." >&2
-        fi
-    else
-        echo "-> ERROR: appimagetool failed to build AppImage." >&2
-    fi
-else
-    echo "-> Skipping AppImage: appimagetool not available or download failed." >&2
-fi
+# Using the extracted run method to prevent FUSE requirement issues during the build process
+./appimagetool-x86_64.AppImage --appimage-extract-and-run ${APPDIR} "${OUTPUT_APPIMAGE}"
 
+if [ -f "${OUTPUT_APPIMAGE}" ]; then
+    mkdir -p "${BUILD_DIR}"
+    mv "${OUTPUT_APPIMAGE}" "${BUILD_DIR}/"
+else
+    echo "-> ERROR: AppImage creation failed" >&2
+fi
 
 # =========================================
 # 4. Clean up
 # =========================================
-echo "-> Cleaning up staging directories..."
+echo "-> Cleaning up staging directories and build files..."
 rm -rf "${DEB_DIR}"
 rm -rf "${APPDIR}"
+rm -f appimagetool-x86_64.AppImage
+rm -rf squashfs-root
 
 echo "========================================="
 echo " Build Complete! "
